@@ -1,0 +1,21 @@
+[settings]
+process_unmapped_keys = false
+startup_layer = "base"
+
+[source]
+keys = ["CapsLock", "H", "J", "K", "L", "Space"]
+
+[layers.base]
+CapsLock = { layer_while_held = "nav" }
+H = "H"
+J = "J"
+K = "K"
+L = "L"
+Space = "Space"
+
+[layers.nav]
+H = "Left"
+J = "Down"
+K = "Up"
+L = "Right"
+Space = "A"

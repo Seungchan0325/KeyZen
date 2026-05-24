@@ -1,0 +1,51 @@
+# KeyZen
+
+KeyZen is a Windows-first keyboard layer engine for reducing mouse use and hand movement.
+
+The MVP is intentionally small: low latency, low resource use, fast startup, and clear rules. It is not an automation tool or a macro runner.
+
+## MVP Features
+
+- Windows low-level keyboard hook backend, no driver installation required.
+- TOML configuration at `%APPDATA%\KeyZen\keyzen.toml`.
+- Layer-based mappings with `layer_while_held`, `layer_switch`, `transparent`, `noop`, single-key output, and modifier chords.
+- Tray app with Pause/Resume, Reload Config, Open Config Folder, Start at Login toggle, and Exit.
+
+## Known Windows MVP Limits
+
+Because the MVP uses `LowLevelKeyboardHook`, some OS-reserved shortcuts such as `Win+L` may run before KeyZen can suppress them. This is a deliberate v1 tradeoff for a no-install first release.
+
+KeyZen does not support text macros, shell commands, delayed automation, mouse automation, Unicode text insertion, tap-hold, tap-dance, or one-shot keys in the MVP.
+
+## Example Config
+
+```toml
+[settings]
+process_unmapped_keys = false
+startup_layer = "base"
+
+[source]
+keys = ["CapsLock", "H", "J", "K", "L", "Space"]
+
+[layers.base]
+CapsLock = { layer_while_held = "nav" }
+H = "H"
+J = "J"
+K = "K"
+L = "L"
+Space = "Space"
+
+[layers.nav]
+H = "Left"
+J = "Down"
+K = "Up"
+L = "Right"
+Space = "transparent"
+```
+
+## Development
+
+```powershell
+cargo test
+cargo run -p keyzen
+```

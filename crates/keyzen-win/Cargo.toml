@@ -1,0 +1,10 @@
+[package]
+name = "keyzen-win"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+keyzen-core = { path = "../keyzen-core" }
+windows.workspace = true
