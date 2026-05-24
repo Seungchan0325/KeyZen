@@ -1,3 +1,5 @@
+#![cfg_attr(windows, windows_subsystem = "windows")]
+
 #[cfg(windows)]
 fn main() -> anyhow::Result<()> {
     let app_config_path = keyzen_win::app::ensure_default_config_path()?;

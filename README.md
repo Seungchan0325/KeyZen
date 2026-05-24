@@ -59,3 +59,13 @@ Space = "transparent"
 cargo test
 cargo run -p keyzen
 ```
+
+## Packaging
+
+Create the local unsigned Windows package:
+
+```powershell
+./scripts/package.ps1
+```
+
+The script runs formatting checks, tests, a release build, zip packaging, release note generation, and SHA-256 checksum generation under `dist/`.
