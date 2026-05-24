@@ -1,6 +1,6 @@
 use std::{
     cell::RefCell,
-    sync::atomic::{AtomicBool, Ordering},
+    sync::atomic::{AtomicBool, AtomicU32, Ordering},
 };
 
 use anyhow::{Context, Result};
@@ -19,7 +19,10 @@ use windows::{
     core::{BOOL, Error, HSTRING, PCWSTR, w},
 };
 
-use crate::app::{AppCommand, AppStatus};
+use crate::{
+    app::{AppCommand, AppStatus},
+    log,
+};
 
 const WM_TRAYICON: u32 = WM_APP + 1;
 const ID_PAUSE: usize = 1001;
@@ -30,6 +33,8 @@ const ID_STARTUP: usize = 1005;
 const ID_EXIT: usize = 1006;
 
 static SHOULD_EXIT: AtomicBool = AtomicBool::new(false);
+static TRAY_ADDED: AtomicBool = AtomicBool::new(false);
+static WM_TASKBAR_RESTART: AtomicU32 = AtomicU32::new(0);
 
 thread_local! {
     static HANDLER: RefCell<Option<Box<dyn FnMut(AppCommand) -> Result<AppStatus>>>> = const { RefCell::new(None) };
@@ -44,7 +49,11 @@ where
     STATUS.with(|slot| *slot.borrow_mut() = initial_status);
 
     let hwnd = create_message_window()?;
-    add_tray_icon(hwnd, initial_status)?;
+    if !try_add_tray_icon(hwnd, initial_status) {
+        log::error(format!(
+            "KeyZen tray icon add failed; waiting for shell readiness messages"
+        ));
+    }
 
     let mut msg = MSG::default();
     while !SHOULD_EXIT.load(Ordering::Relaxed) {
@@ -61,7 +70,9 @@ where
         }
     }
 
-    delete_tray_icon(hwnd);
+    if TRAY_ADDED.load(Ordering::Relaxed) {
+        delete_tray_icon(hwnd);
+    }
     Ok(())
 }
 
@@ -87,12 +98,12 @@ fn create_message_window() -> Result<HWND> {
             WINDOW_EX_STYLE::default(),
             class_name,
             w!("KeyZen"),
-            WINDOW_STYLE::default(),
+            WS_POPUP,
             0,
             0,
             0,
             0,
-            Some(HWND_MESSAGE),
+            None,
             None,
             Some(instance.into()),
             None,
@@ -109,6 +120,21 @@ fn add_tray_icon(hwnd: HWND, status: AppStatus) -> Result<()> {
         "failed to add tray icon",
     )?;
     Ok(())
+}
+
+fn try_add_tray_icon(hwnd: HWND, status: AppStatus) -> bool {
+    match add_tray_icon(hwnd, status) {
+        Ok(()) => {
+            if !TRAY_ADDED.swap(true, Ordering::Relaxed) {
+                log::info("KeyZen tray icon added");
+            }
+            true
+        }
+        Err(error) => {
+            log::error(format!("KeyZen tray icon add attempt failed: {error:#}"));
+            false
+        }
+    }
 }
 
 fn delete_tray_icon(hwnd: HWND) {
@@ -148,6 +174,13 @@ unsafe extern "system" fn window_proc(
     lparam: LPARAM,
 ) -> LRESULT {
     match msg {
+        WM_CREATE => {
+            if WM_TASKBAR_RESTART.load(Ordering::Relaxed) == 0 {
+                let message = unsafe { RegisterWindowMessageW(w!("TaskbarCreated")) };
+                WM_TASKBAR_RESTART.store(message, Ordering::Relaxed);
+            }
+            LRESULT(0)
+        }
         WM_COMMAND => {
             let id = wparam.0 & 0xffff;
             let command = match id {
@@ -174,9 +207,20 @@ unsafe extern "system" fn window_proc(
                                     Shell_NotifyIconW(windows::Win32::UI::Shell::NIM_MODIFY, &nid);
                             }
                         }
-                        Err(error) => eprintln!("KeyZen command failed: {error:#}"),
+                        Err(error) => {
+                            let message = format!("KeyZen command failed: {error:#}");
+                            eprintln!("{message}");
+                            log::error(message);
+                        }
                     }
                 });
+            }
+            LRESULT(0)
+        }
+        WM_WINDOWPOSCHANGING => {
+            if !TRAY_ADDED.load(Ordering::Relaxed) {
+                let status = STATUS.with(|slot| *slot.borrow());
+                let _ = try_add_tray_icon(hwnd, status);
             }
             LRESULT(0)
         }
@@ -186,6 +230,14 @@ unsafe extern "system" fn window_proc(
         }
         WM_DESTROY => {
             request_exit();
+            LRESULT(0)
+        }
+        _ if msg == WM_TASKBAR_RESTART.load(Ordering::Relaxed) => {
+            let status = STATUS.with(|slot| *slot.borrow());
+            TRAY_ADDED.store(false, Ordering::Relaxed);
+            if try_add_tray_icon(hwnd, status) {
+                log::info("KeyZen tray icon restored after taskbar restart");
+            }
             LRESULT(0)
         }
         _ => unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) },

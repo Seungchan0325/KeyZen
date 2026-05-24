@@ -9,6 +9,8 @@ mod hook;
 #[cfg(windows)]
 mod keycode;
 #[cfg(windows)]
+pub mod log;
+#[cfg(windows)]
 mod output;
 #[cfg(windows)]
 mod startup;

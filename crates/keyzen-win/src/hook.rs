@@ -13,7 +13,7 @@ use windows::Win32::{
     },
 };
 
-use crate::{keycode::vk_to_key, output::send_output};
+use crate::{keycode::vk_to_key, log, output::send_output};
 
 static ENGINE: OnceLock<Arc<Mutex<Engine>>> = OnceLock::new();
 static PAUSED: OnceLock<Arc<AtomicBool>> = OnceLock::new();
@@ -77,7 +77,9 @@ unsafe extern "system" fn hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -
     };
 
     if let Err(error) = send_output(&plan.events) {
-        eprintln!("KeyZen output error: {error:#}");
+        let message = format!("KeyZen output error: {error:#}");
+        eprintln!("{message}");
+        log::error(message);
     }
 
     if plan.consume_input {

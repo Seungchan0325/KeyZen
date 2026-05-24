@@ -20,7 +20,9 @@ use windows::{
     core::{PCWSTR, PWSTR, w},
 };
 
-use crate::{app_config::AppConfig, defaults::DEFAULT_KEYMAP, hook::KeyboardHook, startup, tray};
+use crate::{
+    app_config::AppConfig, defaults::DEFAULT_KEYMAP, hook::KeyboardHook, log, startup, tray,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AppCommand {
@@ -52,11 +54,16 @@ impl KeyZenApp {
     pub fn new(app_config_path: PathBuf) -> Result<Self> {
         let app_config = AppConfig::load_or_create(&app_config_path)?;
         ensure_default_keymap(&app_config.keymap_path)?;
-        startup::set_enabled(app_config.start_at_login)?;
+        if let Err(error) = startup::set_enabled(app_config.start_at_login) {
+            let message = format!("KeyZen startup registration sync failed: {error:#}");
+            eprintln!("{message}");
+            log::error(message);
+        }
         let config = load_keymap(&app_config.keymap_path)?;
         let engine = Arc::new(Mutex::new(Engine::new(config)));
         let paused = Arc::new(AtomicBool::new(false));
         let hook = KeyboardHook::install(engine.clone(), paused.clone())?;
+        log::info("KeyZen keyboard hook installed");
         Ok(Self {
             app_config_path,
             app_config,
@@ -96,7 +103,9 @@ impl KeyZenApp {
                     };
                 }
                 Err(error) => {
-                    eprintln!("KeyZen config reload failed: {error:#}");
+                    let message = format!("KeyZen config reload failed: {error:#}");
+                    eprintln!("{message}");
+                    log::error(message);
                     self.status = AppStatus::ConfigError;
                 }
             },
@@ -122,7 +131,9 @@ impl KeyZenApp {
                             };
                         }
                         Err(error) => {
-                            eprintln!("KeyZen selected keymap failed: {error:#}");
+                            let message = format!("KeyZen selected keymap failed: {error:#}");
+                            eprintln!("{message}");
+                            log::error(message);
                             self.status = AppStatus::ConfigError;
                         }
                     }
