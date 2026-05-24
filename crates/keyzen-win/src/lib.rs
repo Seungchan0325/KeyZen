@@ -18,7 +18,7 @@ mod startup;
 mod tray;
 
 #[cfg(windows)]
-pub use app::{AppCommand, KeyZenApp};
+pub use app::{AppCommand, AppState, AppStatus, KeyZenApp};
 
 #[cfg(not(windows))]
 compile_error!("keyzen-win only supports Windows targets");

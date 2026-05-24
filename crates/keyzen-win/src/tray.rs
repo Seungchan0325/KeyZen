@@ -20,7 +20,7 @@ use windows::{
 };
 
 use crate::{
-    app::{AppCommand, AppStatus},
+    app::{AppCommand, AppState, AppStatus},
     log,
 };
 
@@ -37,19 +37,19 @@ static TRAY_ADDED: AtomicBool = AtomicBool::new(false);
 static WM_TASKBAR_RESTART: AtomicU32 = AtomicU32::new(0);
 
 thread_local! {
-    static HANDLER: RefCell<Option<Box<dyn FnMut(AppCommand) -> Result<AppStatus>>>> = const { RefCell::new(None) };
-    static STATUS: RefCell<AppStatus> = const { RefCell::new(AppStatus::Running) };
+    static HANDLER: RefCell<Option<Box<dyn FnMut(AppCommand) -> Result<AppState>>>> = const { RefCell::new(None) };
+    static STATE: RefCell<AppState> = const { RefCell::new(AppState { status: AppStatus::Running, start_at_login: false }) };
 }
 
-pub fn run_message_loop<F>(handler: F, initial_status: AppStatus) -> Result<()>
+pub fn run_message_loop<F>(handler: F, initial_state: AppState) -> Result<()>
 where
-    F: FnMut(AppCommand) -> Result<AppStatus> + 'static,
+    F: FnMut(AppCommand) -> Result<AppState> + 'static,
 {
     HANDLER.with(|slot| *slot.borrow_mut() = Some(Box::new(handler)));
-    STATUS.with(|slot| *slot.borrow_mut() = initial_status);
+    STATE.with(|slot| *slot.borrow_mut() = initial_state);
 
     let hwnd = create_message_window()?;
-    if !try_add_tray_icon(hwnd, initial_status) {
+    if !try_add_tray_icon(hwnd, initial_state.status) {
         log::error(format!(
             "KeyZen tray icon add failed; waiting for shell readiness messages"
         ));
@@ -199,9 +199,9 @@ unsafe extern "system" fn window_proc(
                         return;
                     };
                     match handler(command) {
-                        Ok(status) => {
-                            STATUS.with(|slot| *slot.borrow_mut() = status);
-                            let nid = notify_data(hwnd, status);
+                        Ok(state) => {
+                            STATE.with(|slot| *slot.borrow_mut() = state);
+                            let nid = notify_data(hwnd, state.status);
                             unsafe {
                                 let _ =
                                     Shell_NotifyIconW(windows::Win32::UI::Shell::NIM_MODIFY, &nid);
@@ -219,8 +219,8 @@ unsafe extern "system" fn window_proc(
         }
         WM_WINDOWPOSCHANGING => {
             if !TRAY_ADDED.load(Ordering::Relaxed) {
-                let status = STATUS.with(|slot| *slot.borrow());
-                let _ = try_add_tray_icon(hwnd, status);
+                let state = STATE.with(|slot| *slot.borrow());
+                let _ = try_add_tray_icon(hwnd, state.status);
             }
             LRESULT(0)
         }
@@ -233,9 +233,9 @@ unsafe extern "system" fn window_proc(
             LRESULT(0)
         }
         _ if msg == WM_TASKBAR_RESTART.load(Ordering::Relaxed) => {
-            let status = STATUS.with(|slot| *slot.borrow());
+            let state = STATE.with(|slot| *slot.borrow());
             TRAY_ADDED.store(false, Ordering::Relaxed);
-            if try_add_tray_icon(hwnd, status) {
+            if try_add_tray_icon(hwnd, state.status) {
                 log::info("KeyZen tray icon restored after taskbar restart");
             }
             LRESULT(0)
@@ -247,8 +247,8 @@ unsafe extern "system" fn window_proc(
 fn show_menu(hwnd: HWND) {
     unsafe {
         let menu = CreatePopupMenu().unwrap_or_default();
-        let status = STATUS.with(|slot| *slot.borrow());
-        let pause_text = match status {
+        let state = STATE.with(|slot| *slot.borrow());
+        let pause_text = match state.status {
             AppStatus::Paused => "Resume",
             _ => "Pause",
         };
@@ -256,7 +256,7 @@ fn show_menu(hwnd: HWND) {
         append_menu(menu, ID_RELOAD, "Reload Config");
         append_menu(menu, ID_SELECT_KEYMAP, "Select Keymap File...");
         append_menu(menu, ID_OPEN_CONFIG, "Open Config Folder");
-        append_menu(menu, ID_STARTUP, "Toggle Start at Login");
+        append_checked_menu(menu, ID_STARTUP, "Start at Login", state.start_at_login);
         let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
         append_menu(menu, ID_EXIT, "Exit");
 
@@ -279,6 +279,16 @@ fn show_menu(hwnd: HWND) {
 unsafe fn append_menu(menu: HMENU, id: usize, text: &str) {
     let text = HSTRING::from(text);
     let _ = unsafe { AppendMenuW(menu, MF_STRING, id, &text) };
+}
+
+unsafe fn append_checked_menu(menu: HMENU, id: usize, text: &str, checked: bool) {
+    let text = HSTRING::from(text);
+    let flags = if checked {
+        MF_STRING | MF_CHECKED
+    } else {
+        MF_STRING | MF_UNCHECKED
+    };
+    let _ = unsafe { AppendMenuW(menu, flags, id, &text) };
 }
 
 fn write_wide_tip(target: &mut [u16], value: &str) {

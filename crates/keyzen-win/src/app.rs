@@ -41,6 +41,12 @@ pub enum AppStatus {
     ConfigError,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AppState {
+    pub status: AppStatus,
+    pub start_at_login: bool,
+}
+
 pub struct KeyZenApp {
     app_config_path: PathBuf,
     app_config: AppConfig,
@@ -75,11 +81,11 @@ impl KeyZenApp {
     }
 
     pub fn run(mut self) -> Result<()> {
-        let initial_status = self.status;
-        tray::run_message_loop(move |command| self.handle_command(command), initial_status)
+        let initial_state = self.state();
+        tray::run_message_loop(move |command| self.handle_command(command), initial_state)
     }
 
-    fn handle_command(&mut self, command: AppCommand) -> Result<AppStatus> {
+    fn handle_command(&mut self, command: AppCommand) -> Result<AppState> {
         match command {
             AppCommand::TogglePause => {
                 let new_paused = !self.paused.load(Ordering::Relaxed);
@@ -148,7 +154,14 @@ impl KeyZenApp {
             AppCommand::Exit => tray::request_exit(),
         }
 
-        Ok(self.status)
+        Ok(self.state())
+    }
+
+    fn state(&self) -> AppState {
+        AppState {
+            status: self.status,
+            start_at_login: self.app_config.start_at_login,
+        }
     }
 }
 
