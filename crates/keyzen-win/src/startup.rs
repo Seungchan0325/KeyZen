@@ -5,8 +5,8 @@ use windows::{
     Win32::{
         Foundation::{ERROR_FILE_NOT_FOUND, NO_ERROR, WIN32_ERROR},
         System::Registry::{
-            HKEY, HKEY_CURRENT_USER, KEY_READ, KEY_SET_VALUE, REG_SZ, RRF_RT_REG_SZ, RegCloseKey,
-            RegDeleteValueW, RegGetValueW, RegOpenKeyExW, RegSetValueExW,
+            HKEY, HKEY_CURRENT_USER, KEY_SET_VALUE, REG_SZ, RegCloseKey, RegDeleteValueW,
+            RegOpenKeyExW, RegSetValueExW,
         },
     },
     core::HSTRING,
@@ -14,31 +14,6 @@ use windows::{
 
 const RUN_KEY: &str = "Software\\Microsoft\\Windows\\CurrentVersion\\Run";
 const VALUE_NAME: &str = "KeyZen";
-
-pub fn is_enabled() -> Result<bool> {
-    let key = open_run_key(KEY_READ)?;
-    let mut buffer = [0u16; 1024];
-    let mut size = (buffer.len() * 2) as u32;
-    let status = unsafe {
-        RegGetValueW(
-            key,
-            None,
-            &HSTRING::from(VALUE_NAME),
-            RRF_RT_REG_SZ,
-            None,
-            Some(buffer.as_mut_ptr().cast()),
-            Some(&mut size),
-        )
-    };
-    unsafe {
-        let _ = RegCloseKey(key);
-    }
-    if status == ERROR_FILE_NOT_FOUND {
-        return Ok(false);
-    }
-    win32_ok(status, "failed to read startup registry value")?;
-    Ok(true)
-}
 
 pub fn set_enabled(enabled: bool) -> Result<()> {
     let key = open_run_key(KEY_SET_VALUE)?;

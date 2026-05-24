@@ -7,7 +7,8 @@ The MVP is intentionally small: low latency, low resource use, fast startup, and
 ## MVP Features
 
 - Windows low-level keyboard hook backend, no driver installation required.
-- TOML configuration at `%APPDATA%\KeyZen\keyzen.toml`.
+- App configuration at the OS config directory, for example `%APPDATA%\KeyZen\config.toml` on Windows.
+- Keymap configuration path stored in `config.toml`.
 - Layer-based mappings with `layer_while_held`, `layer_switch`, `transparent`, `noop`, single-key output, and modifier chords.
 - Tray app with Pause/Resume, Reload Config, Open Config Folder, Start at Login toggle, and Exit.
 
@@ -17,7 +18,16 @@ Because the MVP uses `LowLevelKeyboardHook`, some OS-reserved shortcuts such as 
 
 KeyZen does not support text macros, shell commands, delayed automation, mouse automation, Unicode text insertion, tap-hold, tap-dance, or one-shot keys in the MVP.
 
-## Example Config
+## App Config
+
+```toml
+start_at_login = false
+keymap_path = "C:\\Users\\you\\AppData\\Roaming\\KeyZen\\keyzen.toml"
+```
+
+`start_at_login` is kept in sync with the current user's Windows startup registry entry.
+
+## Example Keymap
 
 ```toml
 [settings]

@@ -1,0 +1,41 @@
+[settings]
+process_unmapped_keys = false
+startup_layer = "base"
+
+[source]
+keys = [
+    "CapsLock",
+    "H",
+    "J",
+    "K",
+    "L",
+    "U",
+    "D",
+    "B",
+    "W",
+    "G",
+    "I",
+    "A",
+    "X",
+    "Escape",
+    "Space",
+]
+
+[layers.base]
+CapsLock = { layer_while_held = "vim" }
+
+[layers.vim]
+H = "Left"
+J = "Down"
+K = "Up"
+L = "Right"
+U = "PageUp"
+D = "PageDown"
+B = "Ctrl+Left"
+W = "Ctrl+Right"
+G = "Home"
+I = "End"
+A = "End"
+X = "Delete"
+Escape = "Escape"
+Space = "transparent"

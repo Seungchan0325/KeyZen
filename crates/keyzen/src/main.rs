@@ -1,6 +1,7 @@
 #[cfg(windows)]
 fn main() -> anyhow::Result<()> {
-    let app = keyzen_win::KeyZenApp::new(keyzen_win::app::default_config_path())?;
+    let app_config_path = keyzen_win::app::ensure_default_config_path()?;
+    let app = keyzen_win::KeyZenApp::new(app_config_path)?;
     app.run()
 }
 

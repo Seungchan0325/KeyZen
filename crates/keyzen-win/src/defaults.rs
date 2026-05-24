@@ -1,4 +1,4 @@
-[settings]
+pub const DEFAULT_KEYMAP: &str = r#"[settings]
 process_unmapped_keys = false
 startup_layer = "base"
 
@@ -19,3 +19,16 @@ J = "Down"
 K = "Up"
 L = "Right"
 Space = "transparent"
+"#;
+
+#[cfg(test)]
+mod tests {
+    use keyzen_core::RuntimeConfig;
+
+    use super::*;
+
+    #[test]
+    fn default_keymap_is_valid() {
+        RuntimeConfig::parse(DEFAULT_KEYMAP).unwrap();
+    }
+}

@@ -25,8 +25,9 @@ const WM_TRAYICON: u32 = WM_APP + 1;
 const ID_PAUSE: usize = 1001;
 const ID_RELOAD: usize = 1002;
 const ID_OPEN_CONFIG: usize = 1003;
-const ID_STARTUP: usize = 1004;
-const ID_EXIT: usize = 1005;
+const ID_SELECT_KEYMAP: usize = 1004;
+const ID_STARTUP: usize = 1005;
+const ID_EXIT: usize = 1006;
 
 static SHOULD_EXIT: AtomicBool = AtomicBool::new(false);
 
@@ -153,6 +154,7 @@ unsafe extern "system" fn window_proc(
                 ID_PAUSE => Some(AppCommand::TogglePause),
                 ID_RELOAD => Some(AppCommand::ReloadConfig),
                 ID_OPEN_CONFIG => Some(AppCommand::OpenConfigFolder),
+                ID_SELECT_KEYMAP => Some(AppCommand::SelectKeymapFile),
                 ID_STARTUP => Some(AppCommand::ToggleStartAtLogin),
                 ID_EXIT => Some(AppCommand::Exit),
                 _ => None,
@@ -200,6 +202,7 @@ fn show_menu(hwnd: HWND) {
         };
         append_menu(menu, ID_PAUSE, pause_text);
         append_menu(menu, ID_RELOAD, "Reload Config");
+        append_menu(menu, ID_SELECT_KEYMAP, "Select Keymap File...");
         append_menu(menu, ID_OPEN_CONFIG, "Open Config Folder");
         append_menu(menu, ID_STARTUP, "Toggle Start at Login");
         let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());

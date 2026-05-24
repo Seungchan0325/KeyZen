@@ -1,6 +1,10 @@
 #[cfg(windows)]
 pub mod app;
 #[cfg(windows)]
+mod app_config;
+#[cfg(windows)]
+mod defaults;
+#[cfg(windows)]
 mod hook;
 #[cfg(windows)]
 mod keycode;

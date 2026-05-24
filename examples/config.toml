@@ -1,0 +1,2 @@
+start_at_login = false
+keymap_path = "%APPDATA%\\KeyZen\\keyzen.toml"
