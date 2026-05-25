@@ -11,6 +11,7 @@ The MVP is intentionally small: low latency, low resource use, fast startup, and
 - Keymap configuration path stored in `config.toml`.
 - Layer-based mappings with `layer_while_held`, `layer_switch`, `transparent`, `noop`, single-key output, and modifier chords.
 - Tray app with Pause/Resume, Reload Config, Open Config Folder, Start at Login toggle, and Exit.
+- Bundled official KeyZen icon for the Windows executable and tray icon.
 
 ## Known Windows MVP Limits
 

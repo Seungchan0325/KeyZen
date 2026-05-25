@@ -31,6 +31,7 @@ const ID_OPEN_CONFIG: usize = 1003;
 const ID_SELECT_KEYMAP: usize = 1004;
 const ID_STARTUP: usize = 1005;
 const ID_EXIT: usize = 1006;
+const APP_ICON_RESOURCE_ID: usize = 1;
 
 static SHOULD_EXIT: AtomicBool = AtomicBool::new(false);
 static TRAY_ADDED: AtomicBool = AtomicBool::new(false);
@@ -164,6 +165,21 @@ fn notify_data(hwnd: HWND, status: AppStatus) -> NOTIFYICONDATAW {
 }
 
 fn load_default_icon() -> HICON {
+    let app_icon = unsafe {
+        GetModuleHandleW(None).ok().and_then(|instance| {
+            LoadIconW(
+                Some(instance.into()),
+                PCWSTR(APP_ICON_RESOURCE_ID as *const u16),
+            )
+            .ok()
+        })
+    };
+
+    if let Some(icon) = app_icon {
+        return icon;
+    }
+
+    log::error("KeyZen icon resource load failed; using default application icon");
     unsafe { LoadIconW(None, IDI_APPLICATION).unwrap_or_default() }
 }
 
