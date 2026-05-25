@@ -16,26 +16,46 @@ keys = [
     "G",
     "I",
     "A",
+    "R",
+    "S",
+    "V",
+    "Y",
+    "O",
+    "N",
+    "M",
     "X",
+    "Z",
+    "Q",
     "Escape",
+    "Enter",
     "Space",
 ]
 
 [layers.base]
-CapsLock = { layer_while_held = "vim" }
+CapsLock = { layer_while_held = "vim" } # Hold CapsLock to enable the Vim layer.
 
 [layers.vim]
-H = "Left"
-J = "Down"
-K = "Up"
-L = "Right"
-U = "PageUp"
-D = "PageDown"
-B = "Ctrl+Left"
-W = "Ctrl+Right"
-G = "Home"
-I = "End"
-A = "End"
-X = "Delete"
-Escape = "Escape"
-Space = "transparent"
+H = "Left"             # Move left.
+J = "Down"             # Move down.
+K = "Up"               # Move up.
+L = "Right"            # Move right.
+U = "PageUp"           # Move one page up.
+D = "PageDown"         # Move one page down.
+B = "Ctrl+Left"        # Move to the previous word.
+W = "Ctrl+Right"       # Move to the next word.
+G = "Home"             # Move to the start of the current line.
+I = "Home"             # Move to the start of the current line.
+A = "End"              # Move to the end of the current line.
+R = "Ctrl+Home"        # Move to the start of the document.
+S = "Ctrl+End"         # Move to the end of the document.
+V = "Shift+Right"      # Extend selection one character to the right.
+Y = "Shift+Home"       # Extend selection to the start of the line.
+O = "Shift+End"        # Extend selection to the end of the line.
+N = "Ctrl+Shift+Left"  # Extend selection to the previous word.
+M = "Ctrl+Shift+Right" # Extend selection to the next word.
+X = "Delete"           # Delete the next character.
+Z = "Backspace"        # Delete the previous character.
+Q = "Escape"           # Send Escape.
+Escape = "Escape"      # Send Escape.
+Enter = "Enter"        # Send Enter.
+Space = "transparent"  # Fall through to the lower layer.

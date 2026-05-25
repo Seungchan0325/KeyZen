@@ -203,7 +203,9 @@ RightMeta 또는 RMeta
 
 `Ctrl`, `Alt`, `Shift`, `Meta`처럼 좌우를 지정하지 않은 수식어는 각각 왼쪽 수식어로 출력됩니다.
 
-## 예시: Vim 스타일 이동 레이어
+## 예시: 풍부한 Vim 스타일 레이어
+
+아래 예시는 `CapsLock`을 누르고 있는 동안 Vim 느낌의 이동 레이어를 활성화합니다. Vim의 모드 상태나 반복 명령을 흉내 내는 매크로는 아니고, KeyZen이 지원하는 단일 키 출력과 수식어 조합만으로 구성한 실용형 레이어입니다.
 
 ```toml
 [settings]
@@ -224,30 +226,62 @@ keys = [
     "G",
     "I",
     "A",
+    "R",
+    "S",
+    "V",
+    "Y",
+    "O",
+    "N",
+    "M",
     "X",
+    "Z",
+    "Q",
     "Escape",
+    "Enter",
     "Space",
 ]
 
 [layers.base]
-CapsLock = { layer_while_held = "vim" }
+CapsLock = { layer_while_held = "vim" } # CapsLock을 누르는 동안 Vim 레이어를 활성화합니다.
 
 [layers.vim]
-H = "Left"
-J = "Down"
-K = "Up"
-L = "Right"
-U = "PageUp"
-D = "PageDown"
-B = "Ctrl+Left"
-W = "Ctrl+Right"
-G = "Home"
-I = "End"
-A = "End"
-X = "Delete"
-Escape = "Escape"
-Space = "transparent"
+H = "Left"             # 왼쪽으로 이동합니다.
+J = "Down"             # 아래로 이동합니다.
+K = "Up"               # 위로 이동합니다.
+L = "Right"            # 오른쪽으로 이동합니다.
+U = "PageUp"           # 한 페이지 위로 이동합니다.
+D = "PageDown"         # 한 페이지 아래로 이동합니다.
+B = "Ctrl+Left"        # 이전 단어로 이동합니다.
+W = "Ctrl+Right"       # 다음 단어로 이동합니다.
+G = "Home"             # 현재 줄의 처음으로 이동합니다.
+I = "Home"             # 현재 줄의 처음으로 이동합니다.
+A = "End"              # 현재 줄의 끝으로 이동합니다.
+R = "Ctrl+Home"        # 문서의 처음으로 이동합니다.
+S = "Ctrl+End"         # 문서의 끝으로 이동합니다.
+V = "Shift+Right"      # 선택 영역을 오른쪽으로 한 글자 확장합니다.
+Y = "Shift+Home"       # 선택 영역을 줄 처음까지 확장합니다.
+O = "Shift+End"        # 선택 영역을 줄 끝까지 확장합니다.
+N = "Ctrl+Shift+Left"  # 선택 영역을 이전 단어까지 확장합니다.
+M = "Ctrl+Shift+Right" # 선택 영역을 다음 단어까지 확장합니다.
+X = "Delete"           # 다음 글자를 삭제합니다.
+Z = "Backspace"        # 이전 글자를 삭제합니다.
+Q = "Escape"           # Escape를 보냅니다.
+Escape = "Escape"      # Escape를 보냅니다.
+Enter = "Enter"        # Enter를 보냅니다.
+Space = "transparent"  # 아래 레이어의 동작으로 넘깁니다.
 ```
+
+이 예시의 키 배치는 다음처럼 읽으면 됩니다.
+
+- `H/J/K/L`: 왼쪽, 아래, 위, 오른쪽 이동
+- `B/W`: 이전/다음 단어로 이동
+- `U/D`: 페이지 위/아래
+- `G/I/A`: 줄 처음, 줄 처음, 줄 끝
+- `R/S`: 문서 처음/끝
+- `V/Y/O/N/M`: 한 글자, 줄 처음, 줄 끝, 이전 단어, 다음 단어 방향으로 선택 확장
+- `X/Z`: Delete와 Backspace
+- `Q` 또는 `Escape`: Escape
+- `Space`: 아래 레이어로 넘기는 `transparent`
 
 ## 작성 팁
 
