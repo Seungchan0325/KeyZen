@@ -13,10 +13,11 @@ use windows::Win32::{
     },
 };
 
-use crate::{keycode::vk_to_key, log, output::send_output};
+use crate::{keycode::vk_to_key, output::send_output};
 
 static ENGINE: OnceLock<Arc<Mutex<Engine>>> = OnceLock::new();
 static PAUSED: OnceLock<Arc<AtomicBool>> = OnceLock::new();
+static OUTPUT_ERROR_LOGGED: AtomicBool = AtomicBool::new(false);
 
 pub struct KeyboardHook {
     handle: HHOOK,
@@ -77,9 +78,9 @@ unsafe extern "system" fn hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -
     };
 
     if let Err(error) = send_output(&plan.events) {
-        let message = format!("KeyZen output error: {error:#}");
-        eprintln!("{message}");
-        log::error(message);
+        if !OUTPUT_ERROR_LOGGED.swap(true, Ordering::Relaxed) {
+            ::log::error!("KeyZen output error: {error:#}");
+        }
     }
 
     if plan.consume_input {

@@ -256,7 +256,7 @@ Space = "transparent"
 - 레이어 전환 키 자체도 `[source].keys`에 넣으세요.
 - held layer에서 특정 키를 기본 레이어로 넘기고 싶으면 `transparent`를 사용하세요.
 - 키 입력을 막고 싶으면 `noop`를 사용하세요.
-- 설정을 바꾼 뒤 트레이 메뉴의 `Reload Config`로 다시 읽어오세요. 실패하면 기존 설정이 유지되고 오류 메시지가 표시됩니다.
+- keymap 파일을 바꾼 뒤에는 트레이 메뉴의 `Reload Keymap`으로 다시 읽어오세요. `%APPDATA%\KeyZen\config.toml`의 앱 설정이나 keymap 경로를 바꾼 경우에는 `Reload Config`를 사용하세요. 실패하면 기존 설정이 유지되고 오류 메시지가 표시됩니다.
 
 ## 검증
 

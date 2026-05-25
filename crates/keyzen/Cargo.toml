@@ -7,6 +7,7 @@ build = "build.rs"
 
 [dependencies]
 anyhow.workspace = true
+log.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 keyzen-win = { path = "../keyzen-win" }

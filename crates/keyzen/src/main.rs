@@ -2,20 +2,22 @@
 
 #[cfg(windows)]
 fn main() {
+    keyzen_win::log::init_default();
     if let Err(error) = run() {
-        keyzen_win::log::error(format!("KeyZen fatal error: {error:#}"));
+        ::log::error!("KeyZen fatal error: {error:#}");
+        keyzen_win::dialog::show_fatal_error(&error);
         std::process::exit(1);
     }
 }
 
 #[cfg(windows)]
 fn run() -> anyhow::Result<()> {
-    keyzen_win::log::info(format!(
+    ::log::info!(
         "KeyZen starting; log_path={}",
         keyzen_win::log::path().display()
-    ));
+    );
     let app_config_path = keyzen_win::app::ensure_default_config_path()?;
-    keyzen_win::log::info(format!("KeyZen config path={}", app_config_path.display()));
+    ::log::info!("KeyZen config path={}", app_config_path.display());
     let app = keyzen_win::KeyZenApp::new(app_config_path)?;
     app.run()
 }

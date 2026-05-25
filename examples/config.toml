@@ -1,2 +1,8 @@
 start_at_login = false
 keymap_path = "%APPDATA%\\KeyZen\\keyzen.toml"
+
+[logging]
+level = "info"
+path = "%APPDATA%\\KeyZen\\keyzen.log"
+max_bytes = 1048576
+max_files = 3

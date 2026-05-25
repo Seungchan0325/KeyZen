@@ -8,6 +8,7 @@ license.workspace = true
 anyhow.workspace = true
 dirs.workspace = true
 keyzen-core = { path = "../keyzen-core" }
+log.workspace = true
 serde.workspace = true
 toml.workspace = true
 windows.workspace = true

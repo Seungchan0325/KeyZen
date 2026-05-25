@@ -74,6 +74,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "keyzen-win",
+ "log",
 ]
 
 [[package]]
@@ -92,6 +93,7 @@ dependencies = [
  "anyhow",
  "dirs",
  "keyzen-core",
+ "log",
  "serde",
  "toml",
  "windows",
@@ -111,6 +113,12 @@ checksum = "e02f3bb43d335493c96bf3fd3a321600bf6bd07ed34bc64118e9293bdffea46c"
 dependencies = [
  "libc",
 ]
+
+[[package]]
+name = "log"
+version = "0.4.30"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "616ec5685824bcc94416c6d4a7a446eea774a31efd7062c8480ba6fd06d7a6e5"
 
 [[package]]
 name = "option-ext"

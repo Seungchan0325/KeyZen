@@ -20,14 +20,13 @@ use windows::{
     core::{PCWSTR, PWSTR, w},
 };
 
-use crate::{
-    app_config::AppConfig, defaults::DEFAULT_KEYMAP, hook::KeyboardHook, log, startup, tray,
-};
+use crate::{app_config::AppConfig, defaults::DEFAULT_KEYMAP, hook::KeyboardHook, startup, tray};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AppCommand {
     TogglePause,
     ReloadConfig,
+    ReloadKeymap,
     OpenConfigFolder,
     SelectKeymapFile,
     ToggleStartAtLogin,
@@ -59,17 +58,20 @@ pub struct KeyZenApp {
 impl KeyZenApp {
     pub fn new(app_config_path: PathBuf) -> Result<Self> {
         let app_config = AppConfig::load_or_create(&app_config_path)?;
+        crate::log::configure(&app_config.logging);
+        ::log::info!(
+            "KeyZen logging configured; log_path={}",
+            crate::log::path().display()
+        );
         ensure_default_keymap(&app_config.keymap_path)?;
         if let Err(error) = startup::set_enabled(app_config.start_at_login) {
-            let message = format!("KeyZen startup registration sync failed: {error:#}");
-            eprintln!("{message}");
-            log::error(message);
+            ::log::warn!("KeyZen startup registration sync failed: {error:#}");
         }
         let config = load_keymap(&app_config.keymap_path)?;
         let engine = Arc::new(Mutex::new(Engine::new(config)));
         let paused = Arc::new(AtomicBool::new(false));
         let hook = KeyboardHook::install(engine.clone(), paused.clone())?;
-        log::info("KeyZen keyboard hook installed");
+        ::log::info!("KeyZen keyboard hook installed");
         Ok(Self {
             app_config_path,
             app_config,
@@ -95,23 +97,27 @@ impl KeyZenApp {
                 } else {
                     AppStatus::Running
                 };
+                ::log::info!("KeyZen pause state changed; paused={new_paused}");
             }
-            AppCommand::ReloadConfig => match load_keymap(&self.app_config.keymap_path) {
-                Ok(config) => {
-                    self.engine
-                        .lock()
-                        .expect("engine mutex poisoned")
-                        .reload(config);
-                    self.status = if self.paused.load(Ordering::Relaxed) {
-                        AppStatus::Paused
-                    } else {
-                        AppStatus::Running
-                    };
-                }
+            AppCommand::ReloadConfig => match self.reload_app_config() {
+                Ok(()) => {}
                 Err(error) => {
-                    let message = format!("KeyZen config reload failed: {error:#}");
-                    eprintln!("{message}");
-                    log::error(message);
+                    ::log::error!("KeyZen config reload failed: {error:#}");
+                    crate::dialog::show_config_error(
+                        "KeyZen could not reload the app config.",
+                        &error,
+                    );
+                    self.status = AppStatus::ConfigError;
+                }
+            },
+            AppCommand::ReloadKeymap => match self.reload_current_keymap() {
+                Ok(()) => {}
+                Err(error) => {
+                    ::log::error!("KeyZen keymap reload failed: {error:#}");
+                    crate::dialog::show_config_error(
+                        "KeyZen could not reload the current keymap.",
+                        &error,
+                    );
                     self.status = AppStatus::ConfigError;
                 }
             },
@@ -135,11 +141,17 @@ impl KeyZenApp {
                             } else {
                                 AppStatus::Running
                             };
+                            ::log::info!(
+                                "KeyZen keymap selected; keymap_path={}",
+                                self.app_config.keymap_path.display()
+                            );
                         }
                         Err(error) => {
-                            let message = format!("KeyZen selected keymap failed: {error:#}");
-                            eprintln!("{message}");
-                            log::error(message);
+                            ::log::error!("KeyZen selected keymap failed: {error:#}");
+                            crate::dialog::show_config_error(
+                                "KeyZen could not use the selected keymap.",
+                                &error,
+                            );
                             self.status = AppStatus::ConfigError;
                         }
                     }
@@ -150,11 +162,59 @@ impl KeyZenApp {
                 startup::set_enabled(enabled)?;
                 self.app_config.start_at_login = enabled;
                 self.app_config.save(&self.app_config_path)?;
+                ::log::info!("KeyZen start at login changed; enabled={enabled}");
             }
-            AppCommand::Exit => tray::request_exit(),
+            AppCommand::Exit => {
+                ::log::info!("KeyZen exit requested");
+                tray::request_exit();
+            }
         }
 
         Ok(self.state())
+    }
+
+    fn reload_app_config(&mut self) -> Result<()> {
+        let app_config = AppConfig::load_or_create(&self.app_config_path)?;
+        ensure_default_keymap(&app_config.keymap_path)?;
+        let config = load_keymap(&app_config.keymap_path)?;
+        if let Err(error) = startup::set_enabled(app_config.start_at_login) {
+            ::log::warn!("KeyZen startup registration sync failed after config reload: {error:#}");
+        }
+        crate::log::configure(&app_config.logging);
+        self.engine
+            .lock()
+            .expect("engine mutex poisoned")
+            .reload(config);
+        self.app_config = app_config;
+        self.restore_running_status();
+        ::log::info!(
+            "KeyZen app config reloaded; config_path={}; keymap_path={}",
+            self.app_config_path.display(),
+            self.app_config.keymap_path.display()
+        );
+        Ok(())
+    }
+
+    fn reload_current_keymap(&mut self) -> Result<()> {
+        let config = load_keymap(&self.app_config.keymap_path)?;
+        self.engine
+            .lock()
+            .expect("engine mutex poisoned")
+            .reload(config);
+        self.restore_running_status();
+        ::log::info!(
+            "KeyZen keymap reloaded; keymap_path={}",
+            self.app_config.keymap_path.display()
+        );
+        Ok(())
+    }
+
+    fn restore_running_status(&mut self) {
+        self.status = if self.paused.load(Ordering::Relaxed) {
+            AppStatus::Paused
+        } else {
+            AppStatus::Running
+        };
     }
 
     fn state(&self) -> AppState {

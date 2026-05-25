@@ -10,7 +10,7 @@ The MVP is intentionally small: low latency, low resource use, fast startup, and
 - App configuration at the OS config directory, for example `%APPDATA%\KeyZen\config.toml` on Windows.
 - Keymap configuration path stored in `config.toml`.
 - Layer-based mappings with `layer_while_held`, `layer_switch`, `transparent`, `noop`, single-key output, and modifier chords.
-- Tray app with Pause/Resume, Reload Config, Open Config Folder, Start at Login toggle, and Exit.
+- Tray app with Pause/Resume, Reload Config, Reload Keymap, Open Config Folder, Start at Login toggle, and Exit.
 - Bundled official KeyZen icon for the Windows executable and tray icon.
 
 ## Known Windows MVP Limits
@@ -24,9 +24,23 @@ KeyZen does not support text macros, shell commands, delayed automation, mouse a
 ```toml
 start_at_login = false
 keymap_path = "C:\\Users\\you\\AppData\\Roaming\\KeyZen\\keyzen.toml"
+
+[logging]
+level = "info"
+path = "C:\\Users\\you\\AppData\\Roaming\\KeyZen\\keyzen.log"
+max_bytes = 1048576
+max_files = 3
 ```
 
 `start_at_login` is kept in sync with the current user's Windows startup registry entry.
+`logging.level` accepts `error`, `warn`, `info`, `debug`, or `trace`. When the log file exceeds `logging.max_bytes`, KeyZen rotates it through `keyzen.log.1`, `keyzen.log.2`, and so on up to `logging.max_files`.
+
+Log entries are written as readable single-line records:
+
+```text
+2026-05-25 14:32:10 [INFO ] keyzen_win::app - KeyZen keyboard hook installed
+2026-05-25 14:33:04 [ERROR] keyzen_win::app - KeyZen keymap reload failed: failed to parse KeyZen config
+```
 
 ## Example Keymap
 

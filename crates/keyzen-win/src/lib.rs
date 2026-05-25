@@ -5,6 +5,8 @@ mod app_config;
 #[cfg(windows)]
 mod defaults;
 #[cfg(windows)]
+pub mod dialog;
+#[cfg(windows)]
 mod hook;
 #[cfg(windows)]
 mod keycode;

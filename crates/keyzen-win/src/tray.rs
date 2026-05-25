@@ -19,18 +19,16 @@ use windows::{
     core::{BOOL, Error, HSTRING, PCWSTR, w},
 };
 
-use crate::{
-    app::{AppCommand, AppState, AppStatus},
-    log,
-};
+use crate::app::{AppCommand, AppState, AppStatus};
 
 const WM_TRAYICON: u32 = WM_APP + 1;
 const ID_PAUSE: usize = 1001;
-const ID_RELOAD: usize = 1002;
-const ID_OPEN_CONFIG: usize = 1003;
-const ID_SELECT_KEYMAP: usize = 1004;
-const ID_STARTUP: usize = 1005;
-const ID_EXIT: usize = 1006;
+const ID_RELOAD_CONFIG: usize = 1002;
+const ID_RELOAD_KEYMAP: usize = 1003;
+const ID_OPEN_CONFIG: usize = 1004;
+const ID_SELECT_KEYMAP: usize = 1005;
+const ID_STARTUP: usize = 1006;
+const ID_EXIT: usize = 1007;
 const APP_ICON_RESOURCE_ID: usize = 1;
 
 static SHOULD_EXIT: AtomicBool = AtomicBool::new(false);
@@ -51,9 +49,7 @@ where
 
     let hwnd = create_message_window()?;
     if !try_add_tray_icon(hwnd, initial_state.status) {
-        log::error(format!(
-            "KeyZen tray icon add failed; waiting for shell readiness messages"
-        ));
+        ::log::warn!("KeyZen tray icon add failed; waiting for shell readiness messages");
     }
 
     let mut msg = MSG::default();
@@ -127,12 +123,12 @@ fn try_add_tray_icon(hwnd: HWND, status: AppStatus) -> bool {
     match add_tray_icon(hwnd, status) {
         Ok(()) => {
             if !TRAY_ADDED.swap(true, Ordering::Relaxed) {
-                log::info("KeyZen tray icon added");
+                ::log::info!("KeyZen tray icon added");
             }
             true
         }
         Err(error) => {
-            log::error(format!("KeyZen tray icon add attempt failed: {error:#}"));
+            ::log::warn!("KeyZen tray icon add attempt failed: {error:#}");
             false
         }
     }
@@ -179,7 +175,7 @@ fn load_default_icon() -> HICON {
         return icon;
     }
 
-    log::error("KeyZen icon resource load failed; using default application icon");
+    ::log::warn!("KeyZen icon resource load failed; using default application icon");
     unsafe { LoadIconW(None, IDI_APPLICATION).unwrap_or_default() }
 }
 
@@ -201,7 +197,8 @@ unsafe extern "system" fn window_proc(
             let id = wparam.0 & 0xffff;
             let command = match id {
                 ID_PAUSE => Some(AppCommand::TogglePause),
-                ID_RELOAD => Some(AppCommand::ReloadConfig),
+                ID_RELOAD_CONFIG => Some(AppCommand::ReloadConfig),
+                ID_RELOAD_KEYMAP => Some(AppCommand::ReloadKeymap),
                 ID_OPEN_CONFIG => Some(AppCommand::OpenConfigFolder),
                 ID_SELECT_KEYMAP => Some(AppCommand::SelectKeymapFile),
                 ID_STARTUP => Some(AppCommand::ToggleStartAtLogin),
@@ -224,9 +221,7 @@ unsafe extern "system" fn window_proc(
                             }
                         }
                         Err(error) => {
-                            let message = format!("KeyZen command failed: {error:#}");
-                            eprintln!("{message}");
-                            log::error(message);
+                            ::log::error!("KeyZen command failed: {error:#}");
                         }
                     }
                 });
@@ -252,7 +247,7 @@ unsafe extern "system" fn window_proc(
             let state = STATE.with(|slot| *slot.borrow());
             TRAY_ADDED.store(false, Ordering::Relaxed);
             if try_add_tray_icon(hwnd, state.status) {
-                log::info("KeyZen tray icon restored after taskbar restart");
+                ::log::info!("KeyZen tray icon restored after taskbar restart");
             }
             LRESULT(0)
         }
@@ -269,7 +264,8 @@ fn show_menu(hwnd: HWND) {
             _ => "Pause",
         };
         append_menu(menu, ID_PAUSE, pause_text);
-        append_menu(menu, ID_RELOAD, "Reload Config");
+        append_menu(menu, ID_RELOAD_CONFIG, "Reload Config");
+        append_menu(menu, ID_RELOAD_KEYMAP, "Reload Keymap");
         append_menu(menu, ID_SELECT_KEYMAP, "Select Keymap File...");
         append_menu(menu, ID_OPEN_CONFIG, "Open Config Folder");
         append_checked_menu(menu, ID_STARTUP, "Start at Login", state.start_at_login);
