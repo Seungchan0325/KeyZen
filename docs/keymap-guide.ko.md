@@ -14,6 +14,12 @@ startup_layer = "base"
 [source]
 keys = ["CapsLock", "H", "J", "K", "L", "Space"]
 
+[aliases]
+nav_left = "Left"
+nav_down = "Down"
+nav_up = "Up"
+nav_right = "Right"
+
 [layers.base]
 CapsLock = { layer_while_held = "nav" }
 H = "H"
@@ -23,10 +29,10 @@ L = "L"
 Space = "Space"
 
 [layers.nav]
-H = "Left"
-J = "Down"
-K = "Up"
-L = "Right"
+H = "nav_left"
+J = "nav_down"
+K = "nav_up"
+L = "nav_right"
 Space = "transparent"
 ```
 
@@ -127,6 +133,30 @@ H = { key = "Left" }
 ```
 
 명시형 동작은 `key`, `chord`, `layer_while_held`, `layer_switch` 중 정확히 하나만 포함해야 합니다.
+
+## `[aliases]`
+
+`[aliases]`에는 자주 쓰는 동작에 이름을 붙일 수 있습니다. alias는 레이어의 값 위치에서 문자열로 참조합니다.
+
+```toml
+[aliases]
+prev_word = "Ctrl+Left"
+next_word = "Ctrl+Right"
+nav_hold = { layer_while_held = "nav" }
+disabled = "noop"
+
+[layers.base]
+CapsLock = "nav_hold"
+
+[layers.nav]
+B = "prev_word"
+W = "next_word"
+X = "disabled"
+```
+
+alias 값에는 일반 동작과 같은 형식을 사용할 수 있습니다. 단일 키, 수식어 조합, `transparent`, `noop`, `layer_while_held`, `layer_switch`가 모두 가능합니다.
+
+내장 키 이름과 특수 문자열이 먼저 해석됩니다. 예를 들어 `Left`, `Escape`, `transparent`, `noop` 같은 이름은 alias로 덮어쓸 수 없습니다. alias가 서로 순환 참조하면 설정 로드가 실패합니다.
 
 ## 지원 키 이름
 
@@ -244,6 +274,17 @@ keys = [
 [layers.base]
 CapsLock = { layer_while_held = "vim" } # CapsLock을 누르는 동안 Vim 레이어를 활성화합니다.
 
+[aliases]
+prev_word = "Ctrl+Left"              # 이전 단어로 이동합니다.
+next_word = "Ctrl+Right"             # 다음 단어로 이동합니다.
+doc_start = "Ctrl+Home"              # 문서의 처음으로 이동합니다.
+doc_end = "Ctrl+End"                 # 문서의 끝으로 이동합니다.
+select_right = "Shift+Right"         # 선택 영역을 오른쪽으로 한 글자 확장합니다.
+select_line_start = "Shift+Home"     # 선택 영역을 줄 처음까지 확장합니다.
+select_line_end = "Shift+End"        # 선택 영역을 줄 끝까지 확장합니다.
+select_prev_word = "Ctrl+Shift+Left" # 선택 영역을 이전 단어까지 확장합니다.
+select_next_word = "Ctrl+Shift+Right" # 선택 영역을 다음 단어까지 확장합니다.
+
 [layers.vim]
 H = "Left"             # 왼쪽으로 이동합니다.
 J = "Down"             # 아래로 이동합니다.
@@ -251,18 +292,18 @@ K = "Up"               # 위로 이동합니다.
 L = "Right"            # 오른쪽으로 이동합니다.
 U = "PageUp"           # 한 페이지 위로 이동합니다.
 D = "PageDown"         # 한 페이지 아래로 이동합니다.
-B = "Ctrl+Left"        # 이전 단어로 이동합니다.
-W = "Ctrl+Right"       # 다음 단어로 이동합니다.
+B = "prev_word"        # 이전 단어로 이동합니다.
+W = "next_word"        # 다음 단어로 이동합니다.
 G = "Home"             # 현재 줄의 처음으로 이동합니다.
 I = "Home"             # 현재 줄의 처음으로 이동합니다.
 A = "End"              # 현재 줄의 끝으로 이동합니다.
-R = "Ctrl+Home"        # 문서의 처음으로 이동합니다.
-S = "Ctrl+End"         # 문서의 끝으로 이동합니다.
-V = "Shift+Right"      # 선택 영역을 오른쪽으로 한 글자 확장합니다.
-Y = "Shift+Home"       # 선택 영역을 줄 처음까지 확장합니다.
-O = "Shift+End"        # 선택 영역을 줄 끝까지 확장합니다.
-N = "Ctrl+Shift+Left"  # 선택 영역을 이전 단어까지 확장합니다.
-M = "Ctrl+Shift+Right" # 선택 영역을 다음 단어까지 확장합니다.
+R = "doc_start"         # 문서의 처음으로 이동합니다.
+S = "doc_end"           # 문서의 끝으로 이동합니다.
+V = "select_right"      # 선택 영역을 오른쪽으로 한 글자 확장합니다.
+Y = "select_line_start" # 선택 영역을 줄 처음까지 확장합니다.
+O = "select_line_end"   # 선택 영역을 줄 끝까지 확장합니다.
+N = "select_prev_word"  # 선택 영역을 이전 단어까지 확장합니다.
+M = "select_next_word"  # 선택 영역을 다음 단어까지 확장합니다.
 X = "Delete"           # 다음 글자를 삭제합니다.
 Z = "Backspace"        # 이전 글자를 삭제합니다.
 Q = "Escape"           # Escape를 보냅니다.

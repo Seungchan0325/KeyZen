@@ -31,6 +31,17 @@ keys = [
     "Space",
 ]
 
+[aliases]
+prev_word = "Ctrl+Left"              # Move to the previous word.
+next_word = "Ctrl+Right"             # Move to the next word.
+doc_start = "Ctrl+Home"              # Move to the start of the document.
+doc_end = "Ctrl+End"                 # Move to the end of the document.
+select_right = "Shift+Right"         # Extend selection one character to the right.
+select_line_start = "Shift+Home"     # Extend selection to the start of the line.
+select_line_end = "Shift+End"        # Extend selection to the end of the line.
+select_prev_word = "Ctrl+Shift+Left" # Extend selection to the previous word.
+select_next_word = "Ctrl+Shift+Right" # Extend selection to the next word.
+
 [layers.base]
 CapsLock = { layer_while_held = "vim" } # Hold CapsLock to enable the Vim layer.
 
@@ -41,18 +52,18 @@ K = "Up"               # Move up.
 L = "Right"            # Move right.
 U = "PageUp"           # Move one page up.
 D = "PageDown"         # Move one page down.
-B = "Ctrl+Left"        # Move to the previous word.
-W = "Ctrl+Right"       # Move to the next word.
+B = "prev_word"        # Move to the previous word.
+W = "next_word"        # Move to the next word.
 G = "Home"             # Move to the start of the current line.
 I = "Home"             # Move to the start of the current line.
 A = "End"              # Move to the end of the current line.
-R = "Ctrl+Home"        # Move to the start of the document.
-S = "Ctrl+End"         # Move to the end of the document.
-V = "Shift+Right"      # Extend selection one character to the right.
-Y = "Shift+Home"       # Extend selection to the start of the line.
-O = "Shift+End"        # Extend selection to the end of the line.
-N = "Ctrl+Shift+Left"  # Extend selection to the previous word.
-M = "Ctrl+Shift+Right" # Extend selection to the next word.
+R = "doc_start"         # Move to the start of the document.
+S = "doc_end"           # Move to the end of the document.
+V = "select_right"      # Extend selection one character to the right.
+Y = "select_line_start" # Extend selection to the start of the line.
+O = "select_line_end"   # Extend selection to the end of the line.
+N = "select_prev_word"  # Extend selection to the previous word.
+M = "select_next_word"  # Extend selection to the next word.
 X = "Delete"           # Delete the next character.
 Z = "Backspace"        # Delete the previous character.
 Q = "Escape"           # Send Escape.

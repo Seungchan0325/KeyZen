@@ -35,6 +35,8 @@ pub enum ConfigError {
     MissingLayerReference(String, String),
     #[error("chord must contain at least one modifier and exactly one output key")]
     InvalidChord,
+    #[error("recursive alias reference: {0}")]
+    RecursiveAlias(String),
     #[error("unsupported action string `{0}`")]
     UnsupportedActionString(String),
 }
@@ -44,6 +46,8 @@ struct RawConfig {
     #[serde(default)]
     settings: RawSettings,
     source: RawSource,
+    #[serde(default)]
+    aliases: HashMap<String, RawAction>,
     layers: HashMap<String, HashMap<String, RawAction>>,
 }
 
@@ -60,7 +64,7 @@ struct RawSource {
     keys: Vec<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 enum RawAction {
     Shorthand(String),
@@ -92,7 +96,7 @@ impl RuntimeConfig {
             let mut layer = HashMap::new();
             for (input_name, raw_action) in raw_layer {
                 let input_key = Key::from_name(&input_name)?;
-                let action = parse_action(raw_action)?;
+                let action = parse_action(&raw_action, &raw.aliases)?;
                 layer.insert(input_key, action);
             }
             layers.insert(layer_name, layer);
@@ -127,9 +131,20 @@ impl RuntimeConfig {
     }
 }
 
-fn parse_action(raw: RawAction) -> Result<Action, ConfigError> {
+fn parse_action(
+    raw: &RawAction,
+    aliases: &HashMap<String, RawAction>,
+) -> Result<Action, ConfigError> {
+    parse_action_inner(raw, aliases, &mut Vec::new())
+}
+
+fn parse_action_inner(
+    raw: &RawAction,
+    aliases: &HashMap<String, RawAction>,
+    alias_stack: &mut Vec<String>,
+) -> Result<Action, ConfigError> {
     match raw {
-        RawAction::Shorthand(value) => parse_action_string(&value),
+        RawAction::Shorthand(value) => parse_action_string(value, aliases, alias_stack),
         RawAction::Explicit {
             key,
             chord,
@@ -157,9 +172,9 @@ fn parse_action(raw: RawAction) -> Result<Action, ConfigError> {
             } else if let Some(chord) = chord {
                 parse_chord_parts(&chord)
             } else if let Some(layer) = layer_while_held {
-                Ok(Action::LayerWhileHeld(layer))
+                Ok(Action::LayerWhileHeld(layer.clone()))
             } else if let Some(layer) = layer_switch {
-                Ok(Action::LayerSwitch(layer))
+                Ok(Action::LayerSwitch(layer.clone()))
             } else {
                 unreachable!("specified count checked above")
             }
@@ -167,7 +182,11 @@ fn parse_action(raw: RawAction) -> Result<Action, ConfigError> {
     }
 }
 
-fn parse_action_string(value: &str) -> Result<Action, ConfigError> {
+fn parse_action_string(
+    value: &str,
+    aliases: &HashMap<String, RawAction>,
+    alias_stack: &mut Vec<String>,
+) -> Result<Action, ConfigError> {
     match value {
         "transparent" => Ok(Action::Transparent),
         "noop" => Ok(Action::Noop),
@@ -175,8 +194,34 @@ fn parse_action_string(value: &str) -> Result<Action, ConfigError> {
             let parts = value.split('+').map(str::trim).collect::<Vec<_>>();
             parse_chord_parts(&parts)
         }
-        _ => Ok(Action::Key(Key::from_name(value)?)),
+        _ => match Key::from_name(value) {
+            Ok(key) => Ok(Action::Key(key)),
+            Err(error) => {
+                if let Some(alias) = aliases.get(value) {
+                    resolve_alias(value, alias, aliases, alias_stack)
+                } else {
+                    Err(error.into())
+                }
+            }
+        },
     }
+}
+
+fn resolve_alias(
+    name: &str,
+    raw: &RawAction,
+    aliases: &HashMap<String, RawAction>,
+    alias_stack: &mut Vec<String>,
+) -> Result<Action, ConfigError> {
+    if alias_stack.iter().any(|alias| alias == name) {
+        alias_stack.push(name.to_owned());
+        return Err(ConfigError::RecursiveAlias(alias_stack.join(" -> ")));
+    }
+
+    alias_stack.push(name.to_owned());
+    let action = parse_action_inner(raw, aliases, alias_stack);
+    alias_stack.pop();
+    action
 }
 
 fn parse_chord_parts<S: AsRef<str>>(parts: &[S]) -> Result<Action, ConfigError> {
@@ -239,7 +284,8 @@ mod tests {
 
     #[test]
     fn parses_chord_shorthand() {
-        let action = parse_action_string("Ctrl+Alt+Delete").unwrap();
+        let action =
+            parse_action_string("Ctrl+Alt+Delete", &HashMap::new(), &mut Vec::new()).unwrap();
         assert_eq!(
             action,
             Action::Chord {
@@ -261,5 +307,83 @@ mod tests {
         "#;
         let error = RuntimeConfig::parse(input).unwrap_err();
         assert!(matches!(error, ConfigError::MissingLayerReference(_, _)));
+    }
+
+    #[test]
+    fn parses_action_aliases() {
+        let input = r#"
+            [settings]
+            startup_layer = "base"
+
+            [source]
+            keys = ["CapsLock", "H", "Space"]
+
+            [aliases]
+            nav_hold = { layer_while_held = "nav" }
+            prev_word = "Ctrl+Left"
+            disabled = "noop"
+
+            [layers.base]
+            CapsLock = "nav_hold"
+            H = "prev_word"
+            Space = "disabled"
+
+            [layers.nav]
+            H = "Left"
+        "#;
+
+        let config = RuntimeConfig::parse(input).unwrap();
+        assert_eq!(
+            config.layers["base"].get(&Key::CapsLock),
+            Some(&Action::LayerWhileHeld("nav".to_owned()))
+        );
+        assert_eq!(
+            config.layers["base"].get(&Key::H),
+            Some(&Action::Chord {
+                modifiers: vec![Modifier::Ctrl],
+                key: Key::Left,
+            })
+        );
+        assert_eq!(config.layers["base"].get(&Key::Space), Some(&Action::Noop));
+    }
+
+    #[test]
+    fn parses_vim_example() {
+        let config = RuntimeConfig::parse(include_str!("../../../examples/vim.toml")).unwrap();
+        assert_eq!(
+            config.layers["vim"].get(&Key::B),
+            Some(&Action::Chord {
+                modifiers: vec![Modifier::Ctrl],
+                key: Key::Left,
+            })
+        );
+        assert_eq!(
+            config.layers["vim"].get(&Key::M),
+            Some(&Action::Chord {
+                modifiers: vec![Modifier::Ctrl, Modifier::Shift],
+                key: Key::Right,
+            })
+        );
+    }
+
+    #[test]
+    fn rejects_recursive_aliases() {
+        let input = r#"
+            [settings]
+            startup_layer = "base"
+
+            [source]
+            keys = ["H"]
+
+            [aliases]
+            first = "second"
+            second = "first"
+
+            [layers.base]
+            H = "first"
+        "#;
+
+        let error = RuntimeConfig::parse(input).unwrap_err();
+        assert!(matches!(error, ConfigError::RecursiveAlias(_)));
     }
 }
