@@ -53,6 +53,8 @@ L = "Right"
 Space = "transparent"
 ```
 
+자세한 작성법은 [Keymap 설정 파일 작성 가이드](docs/keymap-guide.ko.md)를 참고하세요.
+
 ## Development
 
 ```powershell

@@ -34,6 +34,24 @@ cargo run -p keyzen
 
 Be careful when running the app: it installs a low-level keyboard hook and begins processing configured keys immediately.
 
+## Packaging
+
+Create the local unsigned portable Windows package from the repository root:
+
+```powershell
+./scripts/package.ps1
+```
+
+The script runs `cargo fmt --all --check`, `cargo test --workspace`, `cargo build --release -p keyzen`, then recreates `dist/` artifacts: the portable zip, release notes, and SHA-256 checksum files.
+
+To rebuild the package after checks have already passed:
+
+```powershell
+./scripts/package.ps1 -SkipChecks
+```
+
+Packaging replaces the generated files for the same version under `dist/`. Do not run the packaged `keyzen.exe` as part of automated validation; launching it installs the keyboard hook and keeps the tray app alive until exited from the tray menu.
+
 ## Implementation Rules
 
 - Keep `keyzen-core` platform-independent and side-effect free.
