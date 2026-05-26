@@ -20,7 +20,10 @@ use windows::{
     core::{PCWSTR, PWSTR, w},
 };
 
-use crate::{app_config::AppConfig, defaults::DEFAULT_KEYMAP, hook::KeyboardHook, startup, tray};
+use crate::{
+    app_config::AppConfig, defaults::DEFAULT_KEYMAP, hook::KeyboardHook, output::send_output,
+    startup, tray,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AppCommand {
@@ -92,6 +95,18 @@ impl KeyZenApp {
             AppCommand::TogglePause => {
                 let new_paused = !self.paused.load(Ordering::Relaxed);
                 self.paused.store(new_paused, Ordering::Relaxed);
+                if new_paused {
+                    let plan = self.engine.lock().expect("engine mutex poisoned").reset();
+                    send_output(&plan.events)?;
+                    self._hook.update_deadline(None);
+                } else {
+                    self._hook.update_deadline(
+                        self.engine
+                            .lock()
+                            .expect("engine mutex poisoned")
+                            .next_deadline_ms(),
+                    );
+                }
                 self.status = if new_paused {
                     AppStatus::Paused
                 } else {
@@ -130,10 +145,13 @@ impl KeyZenApp {
                 if let Some(path) = select_keymap_file()? {
                     match load_keymap(&path) {
                         Ok(config) => {
-                            self.engine
+                            let plan = self
+                                .engine
                                 .lock()
                                 .expect("engine mutex poisoned")
                                 .reload(config);
+                            send_output(&plan.events)?;
+                            self._hook.update_deadline(plan.next_deadline_ms);
                             self.app_config.keymap_path = path;
                             self.app_config.save(&self.app_config_path)?;
                             self.status = if self.paused.load(Ordering::Relaxed) {
@@ -181,10 +199,13 @@ impl KeyZenApp {
             ::log::warn!("KeyZen startup registration sync failed after config reload: {error:#}");
         }
         crate::log::configure(&app_config.logging);
-        self.engine
+        let plan = self
+            .engine
             .lock()
             .expect("engine mutex poisoned")
             .reload(config);
+        send_output(&plan.events)?;
+        self._hook.update_deadline(plan.next_deadline_ms);
         self.app_config = app_config;
         self.restore_running_status();
         ::log::info!(
@@ -197,10 +218,13 @@ impl KeyZenApp {
 
     fn reload_current_keymap(&mut self) -> Result<()> {
         let config = load_keymap(&self.app_config.keymap_path)?;
-        self.engine
+        let plan = self
+            .engine
             .lock()
             .expect("engine mutex poisoned")
             .reload(config);
+        send_output(&plan.events)?;
+        self._hook.update_deadline(plan.next_deadline_ms);
         self.restore_running_status();
         ::log::info!(
             "KeyZen keymap reloaded; keymap_path={}",

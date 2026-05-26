@@ -9,7 +9,7 @@ The MVP is intentionally small: low latency, low resource use, fast startup, and
 - Windows low-level keyboard hook backend, no driver installation required.
 - App configuration at the OS config directory, for example `%APPDATA%\KeyZen\config.toml` on Windows.
 - Keymap configuration path stored in `config.toml`.
-- Layer-based mappings with aliases, `layer_while_held`, `layer_switch`, `transparent`, `noop`, single-key output, and modifier chords.
+- Layer-based mappings with aliases, tap-hold, tap-dance, one-shot modifiers/layers, `layer_while_held`, `layer_switch`, `transparent`, `noop`, single-key output, and modifier chords.
 - Tray app with Pause/Resume, Reload Config, Reload Keymap, Open Config Folder, Start at Login toggle, and Exit.
 - Bundled official KeyZen icon for the Windows executable and tray icon.
 
@@ -17,7 +17,7 @@ The MVP is intentionally small: low latency, low resource use, fast startup, and
 
 Because the MVP uses `LowLevelKeyboardHook`, some OS-reserved shortcuts such as `Win+L` may run before KeyZen can suppress them. This is a deliberate v1 tradeoff for a no-install first release.
 
-KeyZen does not support text macros, shell commands, delayed automation, mouse automation, Unicode text insertion, tap-hold, tap-dance, or one-shot keys in the MVP.
+KeyZen does not support text macros, shell commands, delayed automation, mouse automation, or Unicode text insertion in the MVP.
 
 ## App Config
 
