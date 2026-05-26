@@ -123,10 +123,6 @@ impl Engine {
 
     pub fn handle_event_at(&mut self, event: EngineEvent, now_ms: u64) -> OutputPlan {
         let mut plan = self.handle_time(now_ms);
-        if !self.should_process(event.key) {
-            plan.next_deadline_ms = self.next_deadline_ms();
-            return plan;
-        }
 
         let event_plan = match event.kind {
             EventKind::Down => self.handle_down(event.key, now_ms),
@@ -171,6 +167,10 @@ impl Engine {
             .min()
     }
 
+    pub fn is_source_key(&self, key: Key) -> bool {
+        self.config.source_keys.contains(&key)
+    }
+
     pub fn base_layer(&self) -> &str {
         &self.base_layer
     }
@@ -180,10 +180,6 @@ impl Engine {
             .iter()
             .map(|(_, layer)| layer.as_str())
             .collect()
-    }
-
-    fn should_process(&self, key: Key) -> bool {
-        self.config.process_unmapped_keys || self.config.source_keys.contains(&key)
     }
 
     fn handle_down(&mut self, key: Key, now_ms: u64) -> OutputPlan {
@@ -303,11 +299,7 @@ impl Engine {
             }
         }
 
-        if self.config.process_unmapped_keys {
-            Some(Action::Key(key))
-        } else {
-            None
-        }
+        Some(Action::Key(key))
     }
 
     fn action_from_layer(&self, layer_name: &str, key: Key) -> Option<Action> {
@@ -729,6 +721,32 @@ mod tests {
             vec![OutputEvent {
                 key: Key::Space,
                 kind: EventKind::Down
+            }]
+        );
+    }
+
+    #[test]
+    fn source_key_without_mapping_falls_back_to_original_key() {
+        let config = RuntimeConfig::parse(
+            r#"
+            [source]
+            keys = ["A"]
+
+            [layers.base]
+            B = "C"
+        "#,
+        )
+        .unwrap();
+        let mut engine = Engine::new(config);
+        assert!(engine.is_source_key(Key::A));
+        assert!(!engine.is_source_key(Key::B));
+
+        let plan = engine.handle_event_at(down(Key::A), 0);
+        assert_eq!(
+            plan.events,
+            vec![OutputEvent {
+                key: Key::A,
+                kind: EventKind::Down,
             }]
         );
     }

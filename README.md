@@ -46,7 +46,6 @@ Log entries are written as readable single-line records:
 
 ```toml
 [settings]
-process_unmapped_keys = false
 startup_layer = "base"
 
 [source]

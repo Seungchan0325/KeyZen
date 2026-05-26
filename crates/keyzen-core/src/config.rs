@@ -7,7 +7,6 @@ use crate::key::{Key, KeyParseError, Modifier};
 
 #[derive(Debug, Clone)]
 pub struct RuntimeConfig {
-    pub process_unmapped_keys: bool,
     pub startup_layer: String,
     pub source_keys: HashSet<Key>,
     pub layers: HashMap<String, HashMap<Key, Action>>,
@@ -79,8 +78,6 @@ struct RawConfig {
 
 #[derive(Debug, Deserialize)]
 struct RawSettings {
-    #[serde(default)]
-    process_unmapped_keys: bool,
     #[serde(default = "default_startup_layer")]
     startup_layer: String,
     #[serde(default = "default_tap_hold_timeout_ms")]
@@ -94,7 +91,6 @@ struct RawSettings {
 impl Default for RawSettings {
     fn default() -> Self {
         Self {
-            process_unmapped_keys: false,
             startup_layer: default_startup_layer(),
             tap_hold_timeout_ms: default_tap_hold_timeout_ms(),
             tap_dance_timeout_ms: default_tap_dance_timeout_ms(),
@@ -200,7 +196,6 @@ impl RuntimeConfig {
         }
 
         let config = Self {
-            process_unmapped_keys: raw.settings.process_unmapped_keys,
             startup_layer,
             source_keys,
             layers,
@@ -507,7 +502,6 @@ mod tests {
 
     const SAMPLE: &str = r#"
         [settings]
-        process_unmapped_keys = false
         startup_layer = "base"
 
         [source]

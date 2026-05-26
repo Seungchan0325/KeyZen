@@ -202,7 +202,12 @@ unsafe extern "system" fn hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -
     };
 
     let plan = match engine.lock() {
-        Ok(mut engine) => engine.handle_event_at(EngineEvent { key, kind }, current_time_ms()),
+        Ok(mut engine) => {
+            if !engine.is_source_key(key) {
+                return unsafe { CallNextHookEx(None, code, wparam, lparam) };
+            }
+            engine.handle_event_at(EngineEvent { key, kind }, current_time_ms())
+        }
         Err(_) => return unsafe { CallNextHookEx(None, code, wparam, lparam) },
     };
 

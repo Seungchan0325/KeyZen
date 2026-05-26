@@ -1,5 +1,4 @@
 pub const DEFAULT_KEYMAP: &str = r#"[settings]
-process_unmapped_keys = false
 startup_layer = "base"
 
 [source]
