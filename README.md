@@ -44,6 +44,14 @@ Print the normalized configuration:
 cargo run --bin keyzen -- dump --config examples/keyzen.yaml
 ```
 
+Create a portable Windows release package:
+
+```powershell
+.\scripts\package.ps1
+```
+
+The package script writes `dist\KeyZen-<version>-windows-<arch>.zip` and `dist\SHA256SUMS.txt`.
+
 Run KeyZen in the foreground:
 
 ```powershell
