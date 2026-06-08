@@ -1,0 +1,36 @@
+settings:
+  tapping_term_ms: 200
+  tap_dance_term_ms: 180
+  one_shot_timeout_ms: 1000
+
+layers:
+  base:
+    CapsLock:
+      tap_hold:
+        tap: Escape
+        hold:
+          layer_push: nav
+    Space:
+      tap_hold:
+        tap: Space
+        hold:
+          layer_push: symbols
+    Quote:
+      tap_dance:
+        1: Quote
+        2: DoubleQuote
+    LeftShift:
+      one_shot_modifier: Shift
+
+  nav:
+    H: Left
+    J: Down
+    K: Up
+    L: Right
+
+  symbols:
+    H: LeftBracket
+    J: LeftBrace
+    K: RightBrace
+    L: RightBracket
+

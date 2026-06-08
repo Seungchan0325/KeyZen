@@ -1,0 +1,18 @@
+[package]
+name = "keyzen-win"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+keyzen-core = { path = "../keyzen-core" }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_System_Threading",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_WindowsAndMessaging",
+] }
