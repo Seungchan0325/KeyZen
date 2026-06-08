@@ -1,4 +1,16 @@
+pub mod app_settings;
+pub mod single_instance;
+pub mod startup;
+pub mod tray;
+
 use keyzen_core::{KeyCode, OutputCommand};
+
+#[derive(Debug)]
+pub enum RuntimeCommand {
+    Pause(bool),
+    ReplaceConfig(keyzen_core::Config),
+    Stop,
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum KeyzenWinError {
@@ -29,7 +41,7 @@ impl Emitter for NullEmitter {
 mod platform;
 
 #[cfg(windows)]
-pub use platform::{SendInputEmitter, run, run_until_stop};
+pub use platform::{SendInputEmitter, run, run_controlled, run_until_stop};
 
 #[cfg(not(windows))]
 pub fn run(_config: keyzen_core::Config) -> Result<(), KeyzenWinError> {
@@ -40,6 +52,15 @@ pub fn run(_config: keyzen_core::Config) -> Result<(), KeyzenWinError> {
 pub fn run_until_stop(
     _config: keyzen_core::Config,
     _stop: std::sync::mpsc::Receiver<()>,
+) -> Result<(), KeyzenWinError> {
+    Err(KeyzenWinError::UnsupportedPlatform)
+}
+
+#[cfg(not(windows))]
+pub fn run_controlled(
+    _config: Option<keyzen_core::Config>,
+    _paused: bool,
+    _commands: std::sync::mpsc::Receiver<RuntimeCommand>,
 ) -> Result<(), KeyzenWinError> {
     Err(KeyzenWinError::UnsupportedPlatform)
 }

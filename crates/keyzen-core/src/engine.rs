@@ -77,6 +77,30 @@ impl Engine {
         &self.layer_stack
     }
 
+    pub fn reset(&mut self) -> Outcome {
+        let mut outcome = Outcome::default();
+
+        for pending in self.pending_tap_holds.values() {
+            if pending.state == TapHoldState::Holding
+                && let HoldRelease::Commands(commands) = &pending.release
+            {
+                outcome.commands.extend(commands.clone());
+            }
+        }
+
+        for (key, modifiers) in &self.passthrough_modifiers {
+            outcome.commands.push(OutputCommand::KeyUp(key.clone()));
+            for modifier in modifiers.iter().rev() {
+                outcome
+                    .commands
+                    .push(OutputCommand::KeyUp(modifier.clone()));
+            }
+        }
+
+        *self = Self::new(self.config.clone());
+        outcome
+    }
+
     pub fn next_deadline_ms(&self) -> Option<u64> {
         let tap_hold_deadline = self
             .pending_tap_holds
@@ -847,6 +871,43 @@ layers:
         engine.handle_event(up("B", 110));
         let tap_dance = engine.poll(211);
         assert!(tap_dance.commands.is_empty());
+    }
+
+    #[test]
+    fn reset_releases_held_outputs_and_clears_state() {
+        let mut engine = Engine::new(config(
+            r#"
+layers:
+  base:
+    A:
+      tap_hold:
+        tap: Escape
+        hold: LeftCtrl
+    CapsLock:
+      layer_while_held: nav
+    O:
+      one_shot_layer: nav
+  nav:
+    H: Left
+"#,
+        ));
+
+        engine.handle_event(down("A", 0));
+        let hold = engine.poll(201);
+        assert_eq!(hold.commands, vec![OutputCommand::KeyDown(key("LeftCtrl"))]);
+        engine.handle_event(down("CapsLock", 210));
+        engine.handle_event(down("O", 220));
+        engine.handle_event(up("O", 221));
+        assert_eq!(
+            engine.active_layers(),
+            &["base".to_string(), "nav".to_string()]
+        );
+
+        let reset = engine.reset();
+
+        assert_eq!(reset.commands, vec![OutputCommand::KeyUp(key("LeftCtrl"))]);
+        assert_eq!(engine.active_layers(), &["base".to_string()]);
+        assert!(engine.next_deadline_ms().is_none());
     }
 
     #[test]

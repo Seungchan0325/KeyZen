@@ -1,4 +1,4 @@
-use crate::{Emitter, KeyzenWinError};
+use crate::{Emitter, KeyzenWinError, RuntimeCommand};
 use keyzen_core::{Config, Diagnostic, Engine, Event, EventKind, KeyCode, OutputCommand};
 use std::mem::size_of;
 use std::ptr::null_mut;
@@ -30,15 +30,33 @@ pub fn run(config: Config) -> Result<(), KeyzenWinError> {
 }
 
 pub fn run_until_stop(config: Config, stop: mpsc::Receiver<()>) -> Result<(), KeyzenWinError> {
-    let runtime = Arc::new(Runtime::new(config));
+    let (command_tx, command_rx) = mpsc::channel();
+    let _bridge = thread::spawn(move || {
+        let _ = stop.recv();
+        let _ = command_tx.send(RuntimeCommand::Stop);
+    });
+    run_controlled(Some(config), false, command_rx)
+}
+
+pub fn run_controlled(
+    config: Option<Config>,
+    paused: bool,
+    commands: mpsc::Receiver<RuntimeCommand>,
+) -> Result<(), KeyzenWinError> {
+    let runtime = Arc::new(Runtime::new(config, paused));
     let _ = RUNTIME.set(runtime.clone());
 
     let thread_id = unsafe { GetCurrentThreadId() };
-    let stop_runtime = runtime.clone();
-    let stop_thread = thread::spawn(move || {
-        while stop_runtime.running.load(Ordering::SeqCst) {
-            match stop.recv_timeout(Duration::from_millis(TIMER_MAX_SLEEP_MS)) {
-                Ok(()) | Err(mpsc::RecvTimeoutError::Disconnected) => {
+    let command_runtime = runtime.clone();
+    let command_thread = thread::spawn(move || {
+        while command_runtime.running.load(Ordering::SeqCst) {
+            match commands.recv_timeout(Duration::from_millis(TIMER_MAX_SLEEP_MS)) {
+                Ok(RuntimeCommand::Pause(paused)) => command_runtime.set_paused(paused),
+                Ok(RuntimeCommand::ReplaceConfig(config)) => {
+                    command_runtime.replace_config(config);
+                }
+                Ok(RuntimeCommand::Stop) | Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    command_runtime.set_paused(true);
                     unsafe {
                         PostThreadMessageW(thread_id, WM_QUIT, 0, 0);
                     }
@@ -55,7 +73,7 @@ pub fn run_until_stop(config: Config, stop: mpsc::Receiver<()>) -> Result<(), Ke
     let hook = unsafe { SetWindowsHookExW(WH_KEYBOARD_LL, Some(keyboard_proc), null_mut(), 0) };
     if hook.is_null() {
         runtime.running.store(false, Ordering::SeqCst);
-        let _ = stop_thread.join();
+        let _ = command_thread.join();
         let _ = timer_thread.join();
         return Err(last_error("SetWindowsHookExW"));
     }
@@ -66,7 +84,7 @@ pub fn run_until_stop(config: Config, stop: mpsc::Receiver<()>) -> Result<(), Ke
         UnhookWindowsHookEx(hook);
     }
     runtime.running.store(false, Ordering::SeqCst);
-    let _ = stop_thread.join();
+    let _ = command_thread.join();
     let _ = timer_thread.join();
 
     result
@@ -91,6 +109,11 @@ fn message_loop() -> Result<(), KeyzenWinError> {
 
 fn poll_timer(runtime: Arc<Runtime>) {
     while runtime.running.load(Ordering::SeqCst) {
+        if runtime.paused.load(Ordering::SeqCst) {
+            thread::sleep(Duration::from_millis(TIMER_MAX_SLEEP_MS));
+            continue;
+        }
+
         let sleep_ms = runtime
             .with_engine(|engine| {
                 let now = runtime.now_ms();
@@ -117,6 +140,9 @@ unsafe extern "system" fn keyboard_proc(code: i32, wparam: WPARAM, lparam: LPARA
         if keyboard.flags & LLKHF_INJECTED == 0 {
             if let Some(event) = keyboard_event(wparam, keyboard) {
                 if let Some(runtime) = RUNTIME.get() {
+                    if runtime.paused.load(Ordering::SeqCst) {
+                        return unsafe { CallNextHookEx(null_mut(), code, wparam, lparam) };
+                    }
                     let outcome = runtime
                         .with_engine(|engine| engine.handle_event(event))
                         .unwrap_or_default();
@@ -149,19 +175,21 @@ fn keyboard_event(wparam: WPARAM, keyboard: &KBDLLHOOKSTRUCT) -> Option<Event> {
 
 #[derive(Debug)]
 struct Runtime {
-    engine: Mutex<Engine>,
+    engine: Mutex<Option<Engine>>,
     emitter: SendInputEmitter,
     started_at: Instant,
     running: AtomicBool,
+    paused: AtomicBool,
 }
 
 impl Runtime {
-    fn new(config: Config) -> Self {
+    fn new(config: Option<Config>, paused: bool) -> Self {
         Self {
-            engine: Mutex::new(Engine::new(config)),
+            engine: Mutex::new(config.map(Engine::new)),
             emitter: SendInputEmitter,
             started_at: Instant::now(),
             running: AtomicBool::new(true),
+            paused: AtomicBool::new(paused),
         }
     }
 
@@ -171,7 +199,7 @@ impl Runtime {
 
     fn with_engine<T>(&self, f: impl FnOnce(&mut Engine) -> T) -> Option<T> {
         match self.engine.lock() {
-            Ok(mut engine) => Some(f(&mut engine)),
+            Ok(mut engine) => engine.as_mut().map(f),
             Err(error) => {
                 warn!("engine lock poisoned: {error}");
                 None
@@ -190,6 +218,31 @@ impl Runtime {
         }
         if let Err(error) = self.emitter.emit(&outcome.commands) {
             warn!("failed to emit input: {error}");
+        }
+    }
+
+    fn set_paused(&self, paused: bool) {
+        if paused {
+            self.paused.store(true, Ordering::SeqCst);
+            if let Some(outcome) = self.with_engine(Engine::reset) {
+                self.emit_outcome(outcome);
+            }
+        } else if self
+            .engine
+            .lock()
+            .map(|engine| engine.is_some())
+            .unwrap_or(false)
+        {
+            self.paused.store(false, Ordering::SeqCst);
+        }
+    }
+
+    fn replace_config(&self, config: Config) {
+        if let Ok(mut engine) = self.engine.lock() {
+            if let Some(current) = engine.as_mut() {
+                self.emit_outcome(current.reset());
+            }
+            *engine = Some(Engine::new(config));
         }
     }
 }

@@ -3,9 +3,9 @@
 KeyZen 설정 파일은 YAML 형식입니다. 기본 실행 파일명은 `keyzen.yaml`이며, 다른 파일을 쓰려면 `--config`로 경로를 넘깁니다.
 
 ```powershell
-cargo run -- --config examples/keyzen.yaml
-cargo run -- validate --config examples/keyzen.yaml
-cargo run -- dump --config examples/keyzen.yaml
+cargo run --bin keyzen -- --config examples/keyzen.yaml
+cargo run --bin keyzen -- validate --config examples/keyzen.yaml
+cargo run --bin keyzen -- dump --config examples/keyzen.yaml
 ```
 
 `validate`는 설정 오류를 검사하고, `dump`는 KeyZen이 해석한 정규화된 설정을 출력합니다.
