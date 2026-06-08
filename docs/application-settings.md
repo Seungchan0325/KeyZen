@@ -52,11 +52,13 @@ Quit
 ```
 
 - `Pause`: 체크된 동안 remap을 중단하고 키를 그대로 통과시킵니다. 전환 시 눌린 합성 키, 레이어, tap-hold, tap dance, one-shot 상태를 초기화합니다.
-- `Start at login`: 현재 사용자의 Windows Task Scheduler `KeyZen` 로그인 작업을 등록하거나 삭제합니다. 작업 변경에 성공한 경우에만 앱 설정을 저장합니다.
+- `Start at login`: 현재 사용자의 Windows Task Scheduler 작업 `\KeyZen\Autorun for <username>`을 등록하거나 삭제합니다. 작업 변경에 성공한 경우에만 앱 설정을 저장합니다.
 - `Choose key config...`: `.yaml` 또는 `.yml` 파일을 선택하고 즉시 검증합니다. 유효한 경우 바로 적용하며 현재 Pause 상태는 유지합니다.
 - `Quit`: 눌린 합성 키와 엔진 상태를 초기화한 뒤 종료합니다.
 
-tray tooltip은 실행 중 `KeyZen`, 일시정지 중 `KeyZen (Paused)`로 표시됩니다.
+등록된 작업은 현재 사용자 로그온 트리거와 3초 지연(`PT03S`)을 사용합니다. 실행 파일은 현재 `keyzen-tray.exe`의 절대 경로이며, 로그온 유형은 `TASK_LOGON_INTERACTIVE_TOKEN`, 실행 권한은 일반 사용자 권한(`TASK_RUNLEVEL_LUA`)입니다.
+
+tray tooltip은 실행 중 `KeyZen`, 일시정지 중 `KeyZen (Paused)`로 표시됩니다. 로그인 직후 Explorer 또는 알림 영역이 아직 준비되지 않아 tray 아이콘 등록이 실패해도 앱은 종료하지 않고, `TaskbarCreated`와 hidden top-level window 메시지에서 아이콘 등록을 다시 시도합니다.
 
 ## 실행 파일
 

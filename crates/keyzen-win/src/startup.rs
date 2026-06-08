@@ -1,7 +1,11 @@
 use crate::app_settings::{AppPaths, AppSettings, AppSettingsError, save_at};
-use std::path::Path;
+use std::borrow::Cow;
+use std::path::{Path, PathBuf};
 
-pub const TASK_NAME: &str = "KeyZen";
+pub const TASK_FOLDER_PATH: &str = "\\KeyZen";
+pub const AUTORUN_TASK_PREFIX: &str = "Autorun for ";
+const TASK_TRIGGER_DELAY: &str = "PT03S";
+const SDDL_FULL_ACCESS_FOR_EVERYONE: &str = "D:(A;;FA;;;WD)";
 
 pub trait StartupRegistration {
     fn set_enabled(&self, enabled: bool, tray_exe: &Path) -> Result<(), StartupError>;
@@ -100,15 +104,17 @@ fn task_scheduler_set_enabled(enabled: bool, tray_exe: &Path) -> Result<(), Star
         let root = service
             .GetFolder(&BSTR::from("\\"))
             .map_err(|error| StartupError::Scheduler(error.to_string()))?;
+        let user = current_user()?;
+        let task_name = autorun_task_name(&user.name);
 
         if enabled {
+            let folder = get_or_create_task_folder(&service, &root)?;
+            delete_task_if_present(&folder, &task_name)?;
+
             let task = service
                 .NewTask(0)
                 .map_err(|error| StartupError::Scheduler(error.to_string()))?;
-            let user = current_user()?;
-            let command = tray_exe
-                .canonicalize()
-                .map_err(|error| StartupError::Scheduler(error.to_string()))?;
+            let command = task_scheduler_path(tray_exe)?;
 
             let registration = task
                 .RegistrationInfo()
@@ -117,14 +123,17 @@ fn task_scheduler_set_enabled(enabled: bool, tray_exe: &Path) -> Result<(), Star
                 .SetDescription(&BSTR::from("Start KeyZen tray at user logon."))
                 .map_err(|error| StartupError::Scheduler(error.to_string()))?;
             registration
-                .SetAuthor(&BSTR::from("KeyZen"))
+                .SetAuthor(&BSTR::from(user.domain_name.as_str()))
                 .map_err(|error| StartupError::Scheduler(error.to_string()))?;
 
             let principal = task
                 .Principal()
                 .map_err(|error| StartupError::Scheduler(error.to_string()))?;
             principal
-                .SetUserId(&BSTR::from(user.as_str()))
+                .SetId(&BSTR::from("Principal1"))
+                .map_err(|error| StartupError::Scheduler(error.to_string()))?;
+            principal
+                .SetUserId(&BSTR::from(user.domain_name.as_str()))
                 .map_err(|error| StartupError::Scheduler(error.to_string()))?;
             principal
                 .SetLogonType(TASK_LOGON_INTERACTIVE_TOKEN)
@@ -140,6 +149,9 @@ fn task_scheduler_set_enabled(enabled: bool, tray_exe: &Path) -> Result<(), Star
                 .SetMultipleInstances(TASK_INSTANCES_IGNORE_NEW)
                 .map_err(|error| StartupError::Scheduler(error.to_string()))?;
             settings
+                .SetStartWhenAvailable(VARIANT_FALSE)
+                .map_err(|error| StartupError::Scheduler(error.to_string()))?;
+            settings
                 .SetExecutionTimeLimit(&BSTR::from("PT0S"))
                 .map_err(|error| StartupError::Scheduler(error.to_string()))?;
             settings
@@ -147,9 +159,6 @@ fn task_scheduler_set_enabled(enabled: bool, tray_exe: &Path) -> Result<(), Star
                 .map_err(|error| StartupError::Scheduler(error.to_string()))?;
             settings
                 .SetStopIfGoingOnBatteries(VARIANT_FALSE)
-                .map_err(|error| StartupError::Scheduler(error.to_string()))?;
-            settings
-                .SetStartWhenAvailable(VARIANT_TRUE)
                 .map_err(|error| StartupError::Scheduler(error.to_string()))?;
             settings
                 .SetAllowDemandStart(VARIANT_TRUE)
@@ -170,7 +179,7 @@ fn task_scheduler_set_enabled(enabled: bool, tray_exe: &Path) -> Result<(), Star
                 .SetEnabled(VARIANT_TRUE)
                 .map_err(|error| StartupError::Scheduler(error.to_string()))?;
             settings
-                .SetPriority(7)
+                .SetPriority(4)
                 .map_err(|error| StartupError::Scheduler(error.to_string()))?;
 
             let triggers = task
@@ -181,7 +190,13 @@ fn task_scheduler_set_enabled(enabled: bool, tray_exe: &Path) -> Result<(), Star
                 .and_then(|trigger| trigger.cast())
                 .map_err(|error| StartupError::Scheduler(error.to_string()))?;
             logon_trigger
-                .SetUserId(&BSTR::from(user.as_str()))
+                .SetId(&BSTR::from("Trigger1"))
+                .map_err(|error| StartupError::Scheduler(error.to_string()))?;
+            logon_trigger
+                .SetDelay(&BSTR::from(TASK_TRIGGER_DELAY))
+                .map_err(|error| StartupError::Scheduler(error.to_string()))?;
+            logon_trigger
+                .SetUserId(&BSTR::from(user.domain_name.as_str()))
                 .map_err(|error| StartupError::Scheduler(error.to_string()))?;
 
             let actions = task
@@ -192,28 +207,30 @@ fn task_scheduler_set_enabled(enabled: bool, tray_exe: &Path) -> Result<(), Star
                 .and_then(|action| action.cast())
                 .map_err(|error| StartupError::Scheduler(error.to_string()))?;
             exec_action
-                .SetPath(&BSTR::from(command.to_string_lossy().as_ref()))
+                .SetPath(&BSTR::from(command.as_str()))
                 .map_err(|error| StartupError::Scheduler(error.to_string()))?;
-            if let Some(parent) = command.parent() {
+            if let Some(parent) = command_parent(&command) {
                 exec_action
-                    .SetWorkingDirectory(&BSTR::from(parent.to_string_lossy().as_ref()))
+                    .SetWorkingDirectory(&BSTR::from(parent.as_str()))
                     .map_err(|error| StartupError::Scheduler(error.to_string()))?;
             }
 
-            root.RegisterTaskDefinition(
-                &BSTR::from(TASK_NAME),
-                &task,
-                TASK_CREATE_OR_UPDATE.0,
-                &VARIANT::default(),
-                &VARIANT::default(),
-                TASK_LOGON_INTERACTIVE_TOKEN,
-                &VARIANT::default(),
-            )
-            .map_err(|error| StartupError::Scheduler(error.to_string()))?;
-        } else if let Err(error) = root.DeleteTask(&BSTR::from(TASK_NAME), 0) {
-            let code = error.code().0 as u32;
-            if code != 0x8007_0002 && code != 0x8004_130F {
-                return Err(StartupError::Scheduler(error.to_string()));
+            let user_variant = VARIANT::from(BSTR::from(user.domain_name.as_str()));
+            let sddl_variant = VARIANT::from(BSTR::from(SDDL_FULL_ACCESS_FOR_EVERYONE));
+            folder
+                .RegisterTaskDefinition(
+                    &BSTR::from(task_name.as_str()),
+                    &task,
+                    TASK_CREATE_OR_UPDATE.0,
+                    &user_variant,
+                    &VARIANT::default(),
+                    TASK_LOGON_INTERACTIVE_TOKEN,
+                    &sddl_variant,
+                )
+                .map_err(|error| StartupError::Scheduler(error.to_string()))?;
+        } else {
+            if let Ok(folder) = service.GetFolder(&BSTR::from(TASK_FOLDER_PATH)) {
+                delete_task_if_present(&folder, &task_name)?;
             }
         }
     }
@@ -222,22 +239,114 @@ fn task_scheduler_set_enabled(enabled: bool, tray_exe: &Path) -> Result<(), Star
 }
 
 #[cfg(windows)]
-fn current_user() -> Result<String, StartupError> {
-    match (
-        std::env::var("USERDOMAIN").ok(),
-        std::env::var("USERNAME").ok(),
-    ) {
-        (Some(domain), Some(user)) => Ok(format!("{domain}\\{user}")),
-        (_, Some(user)) => Ok(user),
-        _ => Err(StartupError::Scheduler(
-            "current user is unknown".to_string(),
-        )),
+fn get_or_create_task_folder(
+    service: &windows::Win32::System::TaskScheduler::ITaskService,
+    root: &windows::Win32::System::TaskScheduler::ITaskFolder,
+) -> Result<windows::Win32::System::TaskScheduler::ITaskFolder, StartupError> {
+    use windows::Win32::System::Variant::VARIANT;
+    use windows::core::BSTR;
+
+    unsafe {
+        match service.GetFolder(&BSTR::from(TASK_FOLDER_PATH)) {
+            Ok(folder) => Ok(folder),
+            Err(_) => root
+                .CreateFolder(&BSTR::from(TASK_FOLDER_PATH), &VARIANT::default())
+                .map_err(|error| StartupError::Scheduler(error.to_string())),
+        }
+    }
+}
+
+#[cfg(windows)]
+fn delete_task_if_present(
+    folder: &windows::Win32::System::TaskScheduler::ITaskFolder,
+    task_name: &str,
+) -> Result<(), StartupError> {
+    use windows::core::BSTR;
+
+    unsafe {
+        match folder.DeleteTask(&BSTR::from(task_name), 0) {
+            Ok(()) => Ok(()),
+            Err(error) if is_missing_task_error(error.code().0 as u32) => Ok(()),
+            Err(error) => Err(StartupError::Scheduler(error.to_string())),
+        }
+    }
+}
+
+fn autorun_task_name(username: &str) -> String {
+    format!("{AUTORUN_TASK_PREFIX}{username}")
+}
+
+#[cfg(windows)]
+fn is_missing_task_error(code: u32) -> bool {
+    matches!(code, 0x8007_0002 | 0x8007_0003 | 0x8004_130F)
+}
+
+#[cfg(windows)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CurrentUser {
+    name: String,
+    domain_name: String,
+}
+
+#[cfg(windows)]
+fn current_user() -> Result<CurrentUser, StartupError> {
+    let name = std::env::var("USERNAME").map_err(|_| {
+        StartupError::Scheduler("USERNAME environment variable is not set".to_string())
+    })?;
+    let domain = std::env::var("USERDOMAIN").map_err(|_| {
+        StartupError::Scheduler("USERDOMAIN environment variable is not set".to_string())
+    })?;
+
+    Ok(CurrentUser {
+        domain_name: format!("{domain}\\{name}"),
+        name,
+    })
+}
+
+#[cfg(windows)]
+fn task_scheduler_path(path: &Path) -> Result<String, StartupError> {
+    let absolute = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir()
+            .map_err(|error| StartupError::Scheduler(error.to_string()))?
+            .join(path)
+    };
+
+    if !absolute.exists() {
+        return Err(StartupError::Scheduler(format!(
+            "tray executable was not found at {}",
+            absolute.display()
+        )));
+    }
+
+    Ok(strip_windows_verbatim_prefix(&absolute.to_string_lossy()).into_owned())
+}
+
+#[cfg(windows)]
+fn command_parent(command: &str) -> Option<String> {
+    PathBuf::from(command)
+        .parent()
+        .map(|parent| parent.to_string_lossy().into_owned())
+}
+
+#[cfg(windows)]
+fn strip_windows_verbatim_prefix(path: &str) -> Cow<'_, str> {
+    if let Some(rest) = path.strip_prefix(r"\\?\UNC\") {
+        Cow::Owned(format!(r"\\{rest}"))
+    } else if let Some(rest) = path.strip_prefix(r"\\?\") {
+        Cow::Borrowed(rest)
+    } else {
+        Cow::Borrowed(path)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{StartupError, StartupRegistration, update_start_at_login};
+    use super::{
+        AUTORUN_TASK_PREFIX, StartupError, StartupRegistration, TASK_FOLDER_PATH,
+        autorun_task_name, update_start_at_login,
+    };
     use crate::app_settings::{AppPaths, AppSettings, load_at, save_at};
     use std::cell::RefCell;
     use std::path::{Path, PathBuf};
@@ -312,5 +421,25 @@ mod tests {
 
         assert!(!settings.start_at_login);
         assert!(!load_at(&paths).unwrap().start_at_login);
+    }
+
+    #[test]
+    fn uses_dedicated_startup_folder_and_user_task_name() {
+        assert_eq!(TASK_FOLDER_PATH, "\\KeyZen");
+        assert_eq!(AUTORUN_TASK_PREFIX, "Autorun for ");
+        assert_eq!(autorun_task_name("imcha"), "Autorun for imcha");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn strips_verbatim_paths_before_task_scheduler_registration() {
+        assert_eq!(
+            super::strip_windows_verbatim_prefix(r"\\?\C:\KeyZen\keyzen-tray.exe"),
+            r"C:\KeyZen\keyzen-tray.exe"
+        );
+        assert_eq!(
+            super::strip_windows_verbatim_prefix(r"\\?\UNC\server\share\keyzen-tray.exe"),
+            r"\\server\share\keyzen-tray.exe"
+        );
     }
 }

@@ -51,6 +51,7 @@ mod platform {
     use std::ffi::c_void;
     use std::mem::size_of;
     use std::path::PathBuf;
+    use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::{Mutex, OnceLock, mpsc};
     use std::thread;
     use windows::Win32::Foundation::{ERROR_CANCELLED, HWND, LPARAM, LRESULT, POINT, WPARAM};
@@ -70,8 +71,8 @@ mod platform {
         DispatchMessageW, GetCursorPos, GetMessageW, IDI_APPLICATION, LoadIconW, MF_CHECKED,
         MF_SEPARATOR, MF_STRING, MF_UNCHECKED, MSG, PostQuitMessage, RegisterClassW,
         RegisterWindowMessageW, SetForegroundWindow, TPM_RIGHTBUTTON, TrackPopupMenu,
-        TranslateMessage, WINDOW_EX_STYLE, WINDOW_STYLE, WM_APP, WM_COMMAND, WM_CONTEXTMENU,
-        WM_DESTROY, WM_RBUTTONUP, WNDCLASSW,
+        TranslateMessage, WINDOW_EX_STYLE, WM_APP, WM_COMMAND, WM_CONTEXTMENU, WM_DESTROY,
+        WM_RBUTTONUP, WM_WINDOWPOSCHANGING, WNDCLASSW, WS_OVERLAPPEDWINDOW, WS_POPUP,
     };
     use windows::core::{Error as WindowsError, HRESULT, PCWSTR, w};
 
@@ -80,6 +81,7 @@ mod platform {
 
     static STATE: OnceLock<Mutex<TrayState>> = OnceLock::new();
     static TASKBAR_CREATED: OnceLock<u32> = OnceLock::new();
+    static TRAY_ICON_CREATED: AtomicBool = AtomicBool::new(false);
 
     struct TrayState {
         paths: AppPaths,
@@ -108,7 +110,7 @@ mod platform {
         unsafe {
             CoInitializeEx(None, COINIT_APARTMENTTHREADED)
                 .ok()
-                .map_err(operation_error)?;
+                .map_err(|error| operation_error(format!("CoInitializeEx failed: {error}")))?;
         }
         let _com = ComGuard;
 
@@ -126,8 +128,8 @@ mod platform {
                 ),
             };
 
-        let tray_exe =
-            std::env::current_exe().map_err(|error| operation_error(error.to_string()))?;
+        let tray_exe = std::env::current_exe()
+            .map_err(|error| operation_error(format!("current_exe failed: {error}")))?;
         let scheduler_notice = TaskSchedulerStartup
             .set_enabled(settings.start_at_login, &tray_exe)
             .err()
@@ -146,7 +148,7 @@ mod platform {
             .map_err(|_| operation_error("tray state was already initialized"))?;
 
         let hwnd = create_hidden_window()?;
-        add_tray_icon(hwnd)?;
+        let _ = try_add_tray_icon(hwnd);
         let runtime = thread::spawn(move || crate::run_controlled(config, paused, runtime_rx));
 
         if let Some(message) = startup_notice.or(scheduler_notice) {
@@ -193,7 +195,8 @@ mod platform {
             .set(taskbar_created)
             .map_err(|_| operation_error("taskbar message was already registered"))?;
 
-        let module = unsafe { GetModuleHandleW(None) }.map_err(operation_error)?;
+        let module = unsafe { GetModuleHandleW(None) }
+            .map_err(|error| operation_error(format!("GetModuleHandleW failed: {error}")))?;
         let class_name = w!("KeyZenTrayWindow");
         let class = WNDCLASSW {
             lpfnWndProc: Some(window_proc),
@@ -202,7 +205,10 @@ mod platform {
             ..Default::default()
         };
         if unsafe { RegisterClassW(&class) } == 0 {
-            return Err(operation_error(WindowsError::from_win32()));
+            return Err(operation_error(format!(
+                "RegisterClassW failed: {}",
+                WindowsError::from_win32()
+            )));
         }
 
         unsafe {
@@ -210,7 +216,7 @@ mod platform {
                 WINDOW_EX_STYLE::default(),
                 class_name,
                 w!("KeyZen"),
-                WINDOW_STYLE::default(),
+                WS_OVERLAPPEDWINDOW | WS_POPUP,
                 0,
                 0,
                 0,
@@ -220,7 +226,7 @@ mod platform {
                 Some(module.into()),
                 None,
             )
-            .map_err(operation_error)
+            .map_err(|error| operation_error(format!("CreateWindowExW failed: {error}")))
         }
     }
 
@@ -231,11 +237,17 @@ mod platform {
         lparam: LPARAM,
     ) -> LRESULT {
         if TASKBAR_CREATED.get().copied() == Some(message) {
-            let _ = add_tray_icon(hwnd);
+            let _ = try_add_tray_icon(hwnd);
             return LRESULT(0);
         }
 
         match message {
+            WM_WINDOWPOSCHANGING => {
+                if !TRAY_ICON_CREATED.load(Ordering::SeqCst) {
+                    let _ = try_add_tray_icon(hwnd);
+                }
+                LRESULT(0)
+            }
             WM_TRAY_ICON
                 if lparam.0 as u32 & 0xffff == WM_RBUTTONUP
                     || lparam.0 as u32 & 0xffff == WM_CONTEXTMENU =>
@@ -263,7 +275,8 @@ mod platform {
             .and_then(|state| state.lock().ok())
             .map(|state| (state.paused, state.settings.start_at_login))
             .unwrap_or((true, false));
-        let menu = unsafe { CreatePopupMenu() }.map_err(operation_error)?;
+        let menu = unsafe { CreatePopupMenu() }
+            .map_err(|error| operation_error(format!("CreatePopupMenu failed: {error}")))?;
 
         unsafe {
             AppendMenuW(
@@ -440,13 +453,19 @@ mod platform {
         }
     }
 
-    fn add_tray_icon(hwnd: HWND) -> Result<(), TrayError> {
+    fn try_add_tray_icon(hwnd: HWND) -> bool {
+        if TRAY_ICON_CREATED.load(Ordering::SeqCst) {
+            return true;
+        }
+
         let paused = STATE
             .get()
             .and_then(|state| state.lock().ok())
             .map(|state| state.paused)
             .unwrap_or(true);
-        let icon = unsafe { LoadIconW(None, IDI_APPLICATION) }.map_err(operation_error)?;
+        let Ok(icon) = (unsafe { LoadIconW(None, IDI_APPLICATION) }) else {
+            return false;
+        };
         let mut data = base_notify_data(hwnd);
         data.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
         data.uCallbackMessage = WM_TRAY_ICON;
@@ -454,14 +473,19 @@ mod platform {
         fill_wide(&mut data.szTip, tooltip(paused));
 
         if !unsafe { Shell_NotifyIconW(NIM_ADD, &data) }.as_bool() {
-            return Err(operation_error(WindowsError::from_win32()));
+            TRAY_ICON_CREATED.store(false, Ordering::SeqCst);
+            return false;
         }
+        TRAY_ICON_CREATED.store(true, Ordering::SeqCst);
         data.Anonymous.uVersion = NOTIFYICON_VERSION_4;
         let _ = unsafe { Shell_NotifyIconW(NIM_SETVERSION, &data) };
-        Ok(())
+        true
     }
 
     fn delete_tray_icon(hwnd: HWND) {
+        if !TRAY_ICON_CREATED.swap(false, Ordering::SeqCst) {
+            return;
+        }
         let data = base_notify_data(hwnd);
         let _ = unsafe { Shell_NotifyIconW(NIM_DELETE, &data) };
     }

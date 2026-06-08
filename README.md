@@ -13,7 +13,7 @@ The Rust runtime captures keyboard input with a user-mode low-level keyboard hoo
 - One-shot layers and one-shot modifiers
 - YAML configuration
 - Native Windows tray menu and pause control
-- Start at login through Windows Task Scheduler
+- Start at login through a per-user Windows Task Scheduler task
 
 ## Usage
 
@@ -96,7 +96,7 @@ Choose key config...
 Quit
 ```
 
-On first launch, KeyZen creates `%APPDATA%\KeyZen\settings.yaml` and `%APPDATA%\KeyZen\keyzen.yaml`. The default key config contains an empty `base` layer. An invalid or missing selected key config starts the tray in a paused state so it can be repaired with `Choose key config...`.
+On first launch, KeyZen creates `%APPDATA%\KeyZen\settings.yaml` and `%APPDATA%\KeyZen\keyzen.yaml`. The default key config contains an empty `base` layer. An invalid or missing selected key config starts the tray in a paused state so it can be repaired with `Choose key config...`. Start at login is registered as `\KeyZen\Autorun for <username>` with a short logon delay.
 
 ## Notes
 
