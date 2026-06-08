@@ -9,6 +9,7 @@ use tracing_subscriber::EnvFilter;
 
 #[derive(Debug, Parser)]
 #[command(name = "keyzen")]
+#[command(version)]
 #[command(about = "A fast, predictable, layer-based keyboard remapper for Windows.")]
 struct Cli {
     #[arg(short, long, global = true)]
