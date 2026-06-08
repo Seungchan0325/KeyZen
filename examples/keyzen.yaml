@@ -9,12 +9,12 @@ layers:
       tap_hold:
         tap: Escape
         hold:
-          layer_push: nav
+          layer_while_held: nav
     Space:
       tap_hold:
         tap: Space
         hold:
-          layer_push: symbols
+          layer_while_held: symbols
     Quote:
       tap_dance:
         1: Quote
@@ -33,4 +33,3 @@ layers:
     J: LeftBrace
     K: RightBrace
     L: RightBracket
-

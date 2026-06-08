@@ -7,7 +7,7 @@ The v1 runtime is a background CLI application written in Rust. It captures keyb
 ## Features
 
 - Stack-based layers with top-down fallback to `base`
-- Layer push, pop, and toggle actions
+- Layer while-held and toggle actions
 - Tap-hold keys
 - Tap dance keys
 - One-shot layers and one-shot modifiers
@@ -35,6 +35,8 @@ cargo run -p keyzen-cli -- --config examples/keyzen.yaml
 
 Press `Ctrl+C` to stop.
 
+See [docs/configuration.md](docs/configuration.md) for the full YAML configuration guide.
+
 ## Example
 
 ```yaml
@@ -49,7 +51,7 @@ layers:
       tap_hold:
         tap: Escape
         hold:
-          layer_push: nav
+          layer_while_held: nav
     Quote:
       tap_dance:
         1: Quote
@@ -67,4 +69,3 @@ layers:
 ## Notes
 
 KeyZen v1 is not a driver, service, installer, or tray application. It is intended for normal user-session applications. To remap keys inside elevated applications, run KeyZen elevated as well.
-

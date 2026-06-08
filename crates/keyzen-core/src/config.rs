@@ -38,8 +38,7 @@ pub type Layer = BTreeMap<KeyCode, Action>;
 pub enum Action {
     Send(KeyCode),
     Chord(Vec<KeyCode>),
-    LayerPush(String),
-    LayerPop(Option<String>),
+    LayerWhileHeld(String),
     LayerToggle(String),
     TapHold { tap: Box<Action>, hold: Box<Action> },
     TapDance(BTreeMap<u8, Action>),
@@ -162,15 +161,9 @@ fn validate_action(
             }
             Ok(())
         }
-        Action::LayerPush(layer) | Action::LayerToggle(layer) | Action::OneShotLayer(layer) => {
-            validate_layer_target(layer, path, layer_names)
-        }
-        Action::LayerPop(layer) => {
-            if let Some(layer) = layer {
-                validate_layer_target(layer, path, layer_names)?;
-            }
-            Ok(())
-        }
+        Action::LayerWhileHeld(layer)
+        | Action::LayerToggle(layer)
+        | Action::OneShotLayer(layer) => validate_layer_target(layer, path, layer_names),
         Action::TapHold { tap, hold } => {
             if nested_temporal {
                 return Err(ConfigError::NestedTemporalAction {
@@ -260,14 +253,9 @@ impl Serialize for Action {
                 map.serialize_entry("chord", keys)?;
                 map.end()
             }
-            Action::LayerPush(layer) => {
+            Action::LayerWhileHeld(layer) => {
                 let mut map = serializer.serialize_map(Some(1))?;
-                map.serialize_entry("layer_push", layer)?;
-                map.end()
-            }
-            Action::LayerPop(layer) => {
-                let mut map = serializer.serialize_map(Some(1))?;
-                map.serialize_entry("layer_pop", layer)?;
+                map.serialize_entry("layer_while_held", layer)?;
                 map.end()
             }
             Action::LayerToggle(layer) => {
@@ -367,11 +355,7 @@ fn action_from_mapping(mapping: Mapping) -> Result<Action, ActionParseError> {
                 .collect::<Result<Vec<_>, _>>()
                 .map(Action::Chord)
         }),
-        "layer_push" => string_value(value, "layer_push").map(Action::LayerPush),
-        "layer_pop" => match value {
-            Value::Null => Ok(Action::LayerPop(None)),
-            other => string_value(other, "layer_pop").map(|layer| Action::LayerPop(Some(layer))),
-        },
+        "layer_while_held" => string_value(value, "layer_while_held").map(Action::LayerWhileHeld),
         "layer_toggle" => string_value(value, "layer_toggle").map(Action::LayerToggle),
         "one_shot_layer" => string_value(value, "one_shot_layer").map(Action::OneShotLayer),
         "one_shot_modifier" => string_value(value, "one_shot_modifier")
@@ -492,7 +476,7 @@ layers:
       tap_hold:
         tap: Escape
         hold:
-          layer_push: nav
+          layer_while_held: nav
     Quote:
       tap_dance:
         1: Quote
@@ -530,12 +514,43 @@ layers:
 layers:
   base:
     CapsLock:
-      layer_push: missing
+      layer_while_held: missing
 "#,
         )
         .unwrap_err();
 
         assert!(matches!(error, ConfigError::UnknownLayer { .. }));
+    }
+
+    #[test]
+    fn rejects_removed_layer_push_and_layer_pop_actions() {
+        let layer_push = Config::from_yaml_str(
+            r#"
+layers:
+  base:
+    CapsLock:
+      layer_push: nav
+  nav:
+    H: Left
+"#,
+        )
+        .unwrap_err();
+        let layer_pop = Config::from_yaml_str(
+            r#"
+layers:
+  base:
+    CapsLock:
+      layer_pop: null
+"#,
+        )
+        .unwrap_err();
+
+        assert!(
+            layer_push
+                .to_string()
+                .contains("unknown action `layer_push`")
+        );
+        assert!(layer_pop.to_string().contains("unknown action `layer_pop`"));
     }
 
     #[test]

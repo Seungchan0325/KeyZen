@@ -1,0 +1,99 @@
+settings:
+  tapping_term_ms: 200
+  tap_dance_term_ms: 180
+  one_shot_timeout_ms: 1000
+
+layers:
+  base:
+    # Short form for `send`.
+    A: B
+
+    # Explicit send form.
+    Escape:
+      send: CapsLock
+
+    # Chords press keys in order and release them in reverse order.
+    C:
+      chord: [Ctrl, C]
+    V:
+      chord: [Ctrl, V]
+    S:
+      chord: [Ctrl, S]
+
+    # Hold Space to use the symbols layer. Release Space to return to base.
+    Space:
+      layer_while_held: symbols
+
+    # Tap CapsLock for Escape, hold it for the nav layer.
+    CapsLock:
+      tap_hold:
+        tap: Escape
+        hold:
+          layer_while_held: nav
+
+    # Toggle a persistent function layer on/off.
+    F12:
+      layer_toggle: function
+
+    # Tap once for quote, twice for double quote.
+    Quote:
+      tap_dance:
+        1: Quote
+        2: DoubleQuote
+
+    # Apply Shift to the next key only.
+    LeftShift:
+      one_shot_modifier: Shift
+
+    # Use the nav layer for the next key only.
+    O:
+      one_shot_layer: nav
+
+  nav:
+    H: Left
+    J: Down
+    K: Up
+    L: Right
+    U: Home
+    I: PageUp
+    N: End
+    M: PageDown
+    Backspace: Delete
+
+  symbols:
+    H: LeftBracket
+    J: LeftBrace
+    K: RightBrace
+    L: RightBracket
+    U: LessThan
+    I: GreaterThan
+    N: LeftParen
+    M: RightParen
+    Semicolon: Colon
+    Slash: Question
+    Backslash: Pipe
+    Minus: Underscore
+    Equal: Plus
+    Grave: Tilde
+
+  function:
+    A:
+      chord: [Ctrl, Alt, Delete]
+    B:
+      one_shot_modifier: Ctrl
+    C:
+      one_shot_layer: symbols
+    D:
+      tap_dance:
+        1: F1
+        2: F2
+        3: F3
+    E:
+      tap_hold:
+        tap: Enter
+        hold: LeftCtrl
+    F:
+      layer_while_held: nav
+    G:
+      layer_toggle: symbols
+

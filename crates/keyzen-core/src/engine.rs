@@ -48,7 +48,7 @@ pub struct Engine {
     pressed_keys: BTreeSet<KeyCode>,
     suppressed_keys: BTreeSet<KeyCode>,
     repeat_actions: BTreeMap<KeyCode, RepeatAction>,
-    momentary_layers: BTreeMap<KeyCode, String>,
+    held_layers: BTreeMap<KeyCode, String>,
     passthrough_modifiers: BTreeMap<KeyCode, Vec<KeyCode>>,
     pending_tap_holds: BTreeMap<KeyCode, PendingTapHold>,
     dance_down: BTreeMap<KeyCode, DanceDown>,
@@ -64,7 +64,7 @@ impl Engine {
             pressed_keys: BTreeSet::new(),
             suppressed_keys: BTreeSet::new(),
             repeat_actions: BTreeMap::new(),
-            momentary_layers: BTreeMap::new(),
+            held_layers: BTreeMap::new(),
             passthrough_modifiers: BTreeMap::new(),
             pending_tap_holds: BTreeMap::new(),
             dance_down: BTreeMap::new(),
@@ -141,7 +141,7 @@ impl Engine {
             }
             if self.suppressed_keys.contains(&key)
                 || self.pending_tap_holds.contains_key(&key)
-                || self.momentary_layers.contains_key(&key)
+                || self.held_layers.contains_key(&key)
             {
                 outcome.suppress = true;
             }
@@ -202,8 +202,8 @@ impl Engine {
                 outcome.suppress = true;
             }
             action => {
-                let momentary_layer = match &action {
-                    Action::LayerPush(layer) => Some(layer.clone()),
+                let held_layer = match &action {
+                    Action::LayerWhileHeld(layer) => Some(layer.clone()),
                     _ => None,
                 };
                 if action.is_repeatable_output() {
@@ -216,8 +216,8 @@ impl Engine {
                     );
                 }
                 self.execute_action_with_modifiers(&action, &modifiers, now_ms, outcome);
-                if let Some(layer) = momentary_layer {
-                    self.momentary_layers.insert(key.clone(), layer);
+                if let Some(layer) = held_layer {
+                    self.held_layers.insert(key.clone(), layer);
                 }
                 self.suppressed_keys.insert(key);
                 outcome.suppress = true;
@@ -277,7 +277,7 @@ impl Engine {
             return;
         }
 
-        if let Some(layer) = self.momentary_layers.remove(&key) {
+        if let Some(layer) = self.held_layers.remove(&key) {
             self.pop_layer(Some(&layer));
             self.suppressed_keys.remove(&key);
             outcome.suppress = true;
@@ -465,8 +465,7 @@ impl Engine {
                     outcome.commands.push(OutputCommand::KeyUp(key.clone()));
                 }
             }
-            Action::LayerPush(layer) => self.push_layer(layer),
-            Action::LayerPop(layer) => self.pop_layer(layer.as_deref()),
+            Action::LayerWhileHeld(layer) => self.push_layer(layer),
             Action::LayerToggle(layer) => self.toggle_layer(layer),
             Action::TapHold { .. } | Action::TapDance(_) => {
                 outcome.diagnostics.push(Diagnostic::Warning(
@@ -524,13 +523,9 @@ impl Engine {
                 }
                 HoldRelease::Commands(release)
             }
-            Action::LayerPush(layer) => {
+            Action::LayerWhileHeld(layer) => {
                 self.push_layer(layer);
                 HoldRelease::Layer(layer.clone())
-            }
-            Action::LayerPop(layer) => {
-                self.pop_layer(layer.as_deref());
-                HoldRelease::None
             }
             Action::LayerToggle(layer) => {
                 self.toggle_layer(layer);
@@ -733,7 +728,7 @@ layers:
   base:
     A: B
     CapsLock:
-      layer_push: nav
+      layer_while_held: nav
   nav:
     A: Left
 "#,
@@ -795,7 +790,7 @@ layers:
       tap_hold:
         tap: Escape
         hold:
-          layer_push: nav
+          layer_while_held: nav
   nav:
     H: Left
 "#,
@@ -822,7 +817,7 @@ layers:
       tap_hold:
         tap: Escape
         hold:
-          layer_push: nav
+          layer_while_held: nav
   nav:
     H: Left
 "#,
@@ -851,7 +846,7 @@ layers:
       tap_hold:
         tap: Escape
         hold:
-          layer_push: nav
+          layer_while_held: nav
   nav:
     H: Left
 "#,
