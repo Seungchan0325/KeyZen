@@ -50,6 +50,9 @@ layers:
       one_shot_layer: nav
 
   nav:
+    # Block fallback to base A: B while nav is active.
+    A:
+      noop: true
     H: Left
     J: Down
     K: Up
@@ -96,4 +99,3 @@ layers:
       layer_while_held: nav
     G:
       layer_toggle: symbols
-

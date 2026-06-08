@@ -36,6 +36,7 @@ pub type Layer = BTreeMap<KeyCode, Action>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Action {
+    Noop,
     Send(KeyCode),
     Chord(Vec<KeyCode>),
     LayerWhileHeld(String),
@@ -149,6 +150,7 @@ fn validate_action(
     nested_temporal: bool,
 ) -> Result<(), ConfigError> {
     match action {
+        Action::Noop => Ok(()),
         Action::Send(key) | Action::OneShotModifier(key) => validate_key(key, path),
         Action::Chord(keys) => {
             if keys.is_empty() {
@@ -247,6 +249,11 @@ impl Serialize for Action {
         S: Serializer,
     {
         match self {
+            Action::Noop => {
+                let mut map = serializer.serialize_map(Some(1))?;
+                map.serialize_entry("noop", &true)?;
+                map.end()
+            }
             Action::Send(key) => serializer.serialize_str(key.as_str()),
             Action::Chord(keys) => {
                 let mut map = serializer.serialize_map(Some(1))?;
@@ -347,6 +354,7 @@ fn action_from_mapping(mapping: Mapping) -> Result<Action, ActionParseError> {
     };
 
     match action_name {
+        "noop" => noop_from_value(value),
         "send" => string_value(value, "send").and_then(|key| parse_key(&key).map(Action::Send)),
         "chord" => sequence_value(value, "chord").and_then(|values| {
             values
@@ -363,6 +371,18 @@ fn action_from_mapping(mapping: Mapping) -> Result<Action, ActionParseError> {
         "tap_hold" => tap_hold_from_value(value),
         "tap_dance" => tap_dance_from_value(value),
         other => Err(ActionParseError::UnknownAction(other.to_string())),
+    }
+}
+
+fn noop_from_value(value: Value) -> Result<Action, ActionParseError> {
+    match value {
+        Value::Bool(true) => Ok(Action::Noop),
+        Value::Bool(false) => Err(ActionParseError::InvalidShape(
+            "noop must be boolean true".to_string(),
+        )),
+        other => Err(ActionParseError::InvalidShape(format!(
+            "noop must be boolean true, found {other:?}"
+        ))),
     }
 }
 
@@ -588,5 +608,45 @@ layers:
         let action = layer.values().next().unwrap();
         assert_eq!(action, &Action::Send("Space".parse().unwrap()));
         assert!(config.to_yaml_string().unwrap().contains("Escape"));
+    }
+
+    #[test]
+    fn parses_and_serializes_noop_action() {
+        let config = Config::from_yaml_str(
+            r#"
+layers:
+  base:
+    A:
+      noop: true
+"#,
+        )
+        .unwrap();
+
+        let action = config
+            .layers
+            .get("base")
+            .unwrap()
+            .get(&"A".parse().unwrap())
+            .unwrap();
+
+        assert_eq!(action, &Action::Noop);
+        assert!(config.to_yaml_string().unwrap().contains("noop: true"));
+    }
+
+    #[test]
+    fn rejects_invalid_noop_values() {
+        for value in ["false", "null", "A"] {
+            let yaml = format!(
+                r#"
+layers:
+  base:
+    A:
+      noop: {value}
+"#
+            );
+
+            let error = Config::from_yaml_str(&yaml).unwrap_err();
+            assert!(error.to_string().contains("noop must be boolean true"));
+        }
     }
 }

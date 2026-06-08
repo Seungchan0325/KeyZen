@@ -180,6 +180,10 @@ impl Engine {
         self.consume_one_shot_layers();
 
         match action {
+            Action::Noop => {
+                self.suppressed_keys.insert(key);
+                outcome.suppress = true;
+            }
             Action::TapHold { tap, hold } => {
                 self.pending_tap_holds.insert(
                     key.clone(),
@@ -456,6 +460,7 @@ impl Engine {
 
     fn execute_action(&mut self, action: &Action, now_ms: u64, outcome: &mut Outcome) {
         match action {
+            Action::Noop => {}
             Action::Send(key) => outcome.commands.push(OutputCommand::Tap(key.clone())),
             Action::Chord(keys) => {
                 for key in keys {
@@ -491,6 +496,7 @@ impl Engine {
         outcome: &mut Outcome,
     ) -> HoldRelease {
         match action {
+            Action::Noop => HoldRelease::None,
             Action::Send(key) => {
                 for modifier in modifiers {
                     outcome
@@ -778,6 +784,69 @@ layers:
             engine.active_layers(),
             &["base".to_string(), "nav".to_string()]
         );
+    }
+
+    #[test]
+    fn noop_blocks_fallback_and_suppresses_key_events() {
+        let mut engine = Engine::new(config(
+            r#"
+layers:
+  base:
+    A: B
+    C: D
+    CapsLock:
+      layer_while_held: nav
+  nav:
+    A:
+      noop: true
+"#,
+        ));
+
+        engine.handle_event(down("CapsLock", 0));
+
+        let blocked_down = engine.handle_event(down("A", 10));
+        assert!(blocked_down.suppress);
+        assert!(blocked_down.commands.is_empty());
+
+        let blocked_up = engine.handle_event(up("A", 20));
+        assert!(blocked_up.suppress);
+        assert!(blocked_up.commands.is_empty());
+
+        let fallback = engine.handle_event(down("C", 30));
+        assert!(fallback.suppress);
+        assert_eq!(fallback.commands, vec![OutputCommand::Tap(key("D"))]);
+    }
+
+    #[test]
+    fn noop_can_be_used_inside_temporal_actions() {
+        let mut engine = Engine::new(config(
+            r#"
+settings:
+  tap_dance_term_ms: 100
+layers:
+  base:
+    A:
+      tap_hold:
+        tap:
+          noop: true
+        hold:
+          noop: true
+    B:
+      tap_dance:
+        1:
+          noop: true
+"#,
+        ));
+
+        engine.handle_event(down("A", 0));
+        let tap_hold = engine.handle_event(up("A", 50));
+        assert!(tap_hold.suppress);
+        assert!(tap_hold.commands.is_empty());
+
+        engine.handle_event(down("B", 100));
+        engine.handle_event(up("B", 110));
+        let tap_dance = engine.poll(211);
+        assert!(tap_dance.commands.is_empty());
     }
 
     #[test]

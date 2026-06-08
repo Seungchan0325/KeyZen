@@ -66,7 +66,8 @@ layers:
 
 - KeyZen은 현재 레이어 스택의 맨 위부터 아래로 키 매핑을 찾습니다.
 - 맨 아래에는 항상 `base`가 있습니다.
-- 위쪽 레이어에 해당 키가 없으면 아래 레이어로 fallback합니다.
+- 위쪽 레이어에 해당 키가 없을 때만 아래 레이어로 fallback합니다.
+- 위쪽 레이어에서 fallback을 막고 아무 입력도 보내지 않으려면 `noop: true`를 매핑합니다.
 - `base` 레이어는 액션 대상으로 지정할 수 없습니다.
 - `layer_while_held`는 키를 누를 때 레이어를 올리고, 키를 뗄 때 해당 레이어를 내리는 hold 레이어로 동작합니다.
 - `layer_toggle`은 레이어가 없으면 추가하고, 있으면 제거합니다. 같은 레이어가 중복으로 쌓이지 않습니다.
@@ -88,6 +89,24 @@ layers:
 ```
 
 위 설정에서 `A`는 `B`를 보내고, `Escape`는 `CapsLock`을 보냅니다.
+
+### Noop
+
+`noop: true`는 키를 소비하지만 아무 입력도 보내지 않습니다. 상위 레이어에서 하위 레이어 fallback을 명시적으로 막을 때 사용합니다.
+
+```yaml
+layers:
+  base:
+    A: B
+    CapsLock:
+      layer_while_held: nav
+
+  nav:
+    A:
+      noop: true
+```
+
+위 설정에서 `CapsLock`을 누른 상태로 `A`를 누르면 `base`의 `A: B`로 fallback하지 않고 아무 입력도 보내지 않습니다. `noop` 값은 반드시 boolean `true`여야 합니다.
 
 ### Chord
 
@@ -251,6 +270,7 @@ KeyZen은 실행 전에 다음 조건을 검사합니다.
 - `layers.base`가 반드시 있어야 합니다.
 - 레이어 이름은 비어 있을 수 없습니다.
 - 레이어 액션이 참조하는 대상 레이어는 반드시 존재해야 합니다.
+- `noop` 값은 반드시 `true`여야 합니다.
 - `layer_while_held`, `layer_toggle`, `one_shot_layer`는 `base`를 대상으로 삼을 수 없습니다.
 - `chord`는 최소 하나 이상의 키를 가져야 합니다.
 - `tap_dance`는 최소 하나 이상의 탭 횟수를 가져야 하며, `0`은 사용할 수 없습니다.
