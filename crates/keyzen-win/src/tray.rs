@@ -62,9 +62,9 @@ mod platform {
     use windows::Win32::System::LibraryLoader::GetModuleHandleW;
     use windows::Win32::UI::Shell::Common::COMDLG_FILTERSPEC;
     use windows::Win32::UI::Shell::{
-        FileOpenDialog, IFileOpenDialog, NIF_ICON, NIF_INFO, NIF_MESSAGE, NIF_TIP, NIIF_INFO,
-        NIM_ADD, NIM_DELETE, NIM_MODIFY, NIM_SETVERSION, NOTIFYICON_VERSION_4, NOTIFYICONDATAW,
-        SIGDN_FILESYSPATH, Shell_NotifyIconW,
+        FileOpenDialog, IFileOpenDialog, NIF_ICON, NIF_INFO, NIF_MESSAGE, NIF_SHOWTIP, NIF_TIP,
+        NIIF_INFO, NIM_ADD, NIM_DELETE, NIM_MODIFY, NIM_SETVERSION, NOTIFYICON_VERSION_4,
+        NOTIFYICONDATAW, SIGDN_FILESYSPATH, Shell_NotifyIconW,
     };
     use windows::Win32::UI::WindowsAndMessaging::{
         AppendMenuW, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyMenu, DestroyWindow,
@@ -467,7 +467,7 @@ mod platform {
             return false;
         };
         let mut data = base_notify_data(hwnd);
-        data.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
+        data.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP | NIF_SHOWTIP;
         data.uCallbackMessage = WM_TRAY_ICON;
         data.hIcon = icon;
         fill_wide(&mut data.szTip, tooltip(paused));
@@ -492,7 +492,7 @@ mod platform {
 
     fn update_tooltip(hwnd: HWND, paused: bool) {
         let mut data = base_notify_data(hwnd);
-        data.uFlags = NIF_TIP;
+        data.uFlags = NIF_TIP | NIF_SHOWTIP;
         fill_wide(&mut data.szTip, tooltip(paused));
         let _ = unsafe { Shell_NotifyIconW(NIM_MODIFY, &data) };
     }
