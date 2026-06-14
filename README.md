@@ -60,6 +60,17 @@ cargo run --bin keyzen -- --config examples/keyzen.yaml
 
 Press `Ctrl+C` to stop.
 
+Add `--debug-events` to print structured key event diagnostics to stderr:
+
+```powershell
+cargo run --bin keyzen -- --config examples/keyzen.yaml --debug-events
+```
+
+Each input event includes the elapsed runtime in milliseconds, input key and event kind, whether
+the original input was suppressed, engine output commands, and the active layer stack. Timer and
+reset events are printed only when they produce output commands or diagnostics. Key event logging
+is disabled unless `--debug-events` is specified and is not available in tray mode.
+
 See [docs/configuration.md](docs/configuration.md) for the key mapping configuration guide and [docs/application-settings.md](docs/application-settings.md) for tray and startup settings.
 
 ## Example
@@ -105,6 +116,10 @@ Quit
 ```
 
 On first launch, KeyZen creates `%APPDATA%\KeyZen\settings.yaml` and `%APPDATA%\KeyZen\keyzen.yaml`. The default key config contains an empty `base` layer. An invalid or missing selected key config starts the tray in a paused state so it can be repaired with `Choose key config...`. Start at login is registered as `\KeyZen\Autorun for <username>` with a short logon delay.
+
+The tray app writes lifecycle and failure diagnostics to `%APPDATA%\KeyZen\keyzen.log`. If a
+process crash or forced termination prevents a final log entry, the next launch reports that the
+previous tray session did not shut down cleanly.
 
 ## Notes
 

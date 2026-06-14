@@ -1,6 +1,6 @@
 [package]
 name = "keyzen-win"
-version = "1.0.1"
+version = "1.0.2"
 edition.workspace = true
 license.workspace = true
 
@@ -10,6 +10,7 @@ serde = { workspace = true }
 serde_yaml = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
 windows = { workspace = true, features = [

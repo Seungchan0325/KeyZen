@@ -60,6 +60,18 @@ Quit
 
 tray tooltip은 실행 중 `KeyZen`, 일시정지 중 `KeyZen (Paused)`로 표시됩니다. 로그인 직후 Explorer 또는 알림 영역이 아직 준비되지 않아 tray 아이콘 등록이 실패해도 앱은 종료하지 않고, `TaskbarCreated`와 hidden top-level window 메시지에서 아이콘 등록을 다시 시도합니다.
 
+## 진단 로그
+
+tray 앱은 다음 파일에 시작, 트레이 아이콘 등록, 런타임 상태, 종료 요청과 오류를 기록합니다.
+
+```text
+%APPDATA%\KeyZen\keyzen.log
+```
+
+로그가 시작 시점에 5MB 이상이면 기존 로그를 `keyzen.log.1`로 이동합니다. 실행 중에는
+`tray.running` 마커가 존재하며 정상 종료 시 제거됩니다. 강제 종료나 프로세스 충돌처럼 마지막
+원인을 기록할 수 없는 경우에는 다음 실행 로그에 이전 세션이 정상 종료되지 않았다고 기록됩니다.
+
 ## 실행 파일
 
 ```powershell

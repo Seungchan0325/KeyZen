@@ -1,12 +1,12 @@
-use crate::{Emitter, KeyzenWinError, RuntimeCommand};
-use keyzen_core::{Config, Diagnostic, Engine, Event, EventKind, KeyCode, OutputCommand};
+use crate::{DEBUG_EVENTS_TARGET, Emitter, KeyzenWinError, RuntimeCommand};
+use keyzen_core::{Config, Diagnostic, Engine, Event, EventKind, KeyCode, Outcome, OutputCommand};
 use std::mem::size_of;
 use std::ptr::null_mut;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
-use tracing::warn;
+use tracing::{debug, error, info, warn};
 use windows_sys::Win32::Foundation::{GetLastError, LPARAM, LRESULT, WPARAM};
 use windows_sys::Win32::System::Threading::GetCurrentThreadId;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
@@ -30,12 +30,20 @@ pub fn run(config: Config) -> Result<(), KeyzenWinError> {
 }
 
 pub fn run_until_stop(config: Config, stop: mpsc::Receiver<()>) -> Result<(), KeyzenWinError> {
+    run_until_stop_with_debug_events(config, stop, false)
+}
+
+pub fn run_until_stop_with_debug_events(
+    config: Config,
+    stop: mpsc::Receiver<()>,
+    debug_events: bool,
+) -> Result<(), KeyzenWinError> {
     let (command_tx, command_rx) = mpsc::channel();
     let _bridge = thread::spawn(move || {
         let _ = stop.recv();
         let _ = command_tx.send(RuntimeCommand::Stop);
     });
-    run_controlled(Some(config), false, command_rx)
+    run_controlled_inner(Some(config), false, command_rx, debug_events)
 }
 
 pub fn run_controlled(
@@ -43,8 +51,27 @@ pub fn run_controlled(
     paused: bool,
     commands: mpsc::Receiver<RuntimeCommand>,
 ) -> Result<(), KeyzenWinError> {
-    let runtime = Arc::new(Runtime::new(config, paused));
+    run_controlled_inner(config, paused, commands, false)
+}
+
+fn run_controlled_inner(
+    config: Option<Config>,
+    paused: bool,
+    commands: mpsc::Receiver<RuntimeCommand>,
+    debug_events: bool,
+) -> Result<(), KeyzenWinError> {
+    let runtime = Arc::new(Runtime::new(config, paused, debug_events));
     let _ = RUNTIME.set(runtime.clone());
+    info!(
+        target: "keyzen_win::lifecycle",
+        paused,
+        has_config = runtime
+            .engine
+            .lock()
+            .map(|engine| engine.is_some())
+            .unwrap_or(false),
+        "remapping runtime initializing"
+    );
 
     let thread_id = unsafe { GetCurrentThreadId() };
     let command_runtime = runtime.clone();
@@ -55,10 +82,33 @@ pub fn run_controlled(
                 Ok(RuntimeCommand::ReplaceConfig(config)) => {
                     command_runtime.replace_config(config);
                 }
-                Ok(RuntimeCommand::Stop) | Err(mpsc::RecvTimeoutError::Disconnected) => {
+                Ok(RuntimeCommand::Stop) => {
+                    info!(
+                        target: "keyzen_win::lifecycle",
+                        "remapping runtime stop command received"
+                    );
                     command_runtime.set_paused(true);
-                    unsafe {
-                        PostThreadMessageW(thread_id, WM_QUIT, 0, 0);
+                    if unsafe { PostThreadMessageW(thread_id, WM_QUIT, 0, 0) } == 0 {
+                        warn!(
+                            target: "keyzen_win::lifecycle",
+                            error = %last_error("PostThreadMessageW"),
+                            "failed to stop remapping runtime message loop"
+                        );
+                    }
+                    break;
+                }
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    warn!(
+                        target: "keyzen_win::lifecycle",
+                        "remapping runtime command channel disconnected"
+                    );
+                    command_runtime.set_paused(true);
+                    if unsafe { PostThreadMessageW(thread_id, WM_QUIT, 0, 0) } == 0 {
+                        warn!(
+                            target: "keyzen_win::lifecycle",
+                            error = %last_error("PostThreadMessageW"),
+                            "failed to stop remapping runtime message loop"
+                        );
                     }
                     break;
                 }
@@ -75,17 +125,43 @@ pub fn run_controlled(
         runtime.running.store(false, Ordering::SeqCst);
         let _ = command_thread.join();
         let _ = timer_thread.join();
-        return Err(last_error("SetWindowsHookExW"));
+        let error = last_error("SetWindowsHookExW");
+        error!(
+            target: "keyzen_win::lifecycle",
+            %error,
+            "failed to install low-level keyboard hook"
+        );
+        return Err(error);
     }
+    info!(
+        target: "keyzen_win::lifecycle",
+        "low-level keyboard hook installed"
+    );
 
     let result = message_loop();
+    match &result {
+        Ok(()) => info!(
+            target: "keyzen_win::lifecycle",
+            "remapping runtime message loop stopped"
+        ),
+        Err(error) => error!(
+            target: "keyzen_win::lifecycle",
+            %error,
+            "remapping runtime message loop failed"
+        ),
+    }
 
-    unsafe {
-        UnhookWindowsHookEx(hook);
+    if unsafe { UnhookWindowsHookEx(hook) } == 0 {
+        warn!(
+            target: "keyzen_win::lifecycle",
+            error = %last_error("UnhookWindowsHookEx"),
+            "failed to remove low-level keyboard hook"
+        );
     }
     runtime.running.store(false, Ordering::SeqCst);
     let _ = command_thread.join();
     let _ = timer_thread.join();
+    info!(target: "keyzen_win::lifecycle", "remapping runtime stopped");
 
     result
 }
@@ -127,9 +203,18 @@ fn poll_timer(runtime: Arc<Runtime>) {
         thread::sleep(Duration::from_millis(sleep_ms));
 
         let now = runtime.now_ms();
-        let outcome = runtime
-            .with_engine(|engine| engine.poll(now))
+        let (outcome, layers) = runtime
+            .with_engine(|engine| {
+                let outcome = engine.poll(now);
+                let layers = if runtime.debug_events && outcome_has_debug_info(&outcome) {
+                    engine.active_layers().to_vec()
+                } else {
+                    Vec::new()
+                };
+                (outcome, layers)
+            })
             .unwrap_or_default();
+        runtime.log_timer_event(now, &outcome, &layers);
         runtime.emit_outcome(outcome);
     }
 }
@@ -143,10 +228,22 @@ unsafe extern "system" fn keyboard_proc(code: i32, wparam: WPARAM, lparam: LPARA
                     if runtime.paused.load(Ordering::SeqCst) {
                         return unsafe { CallNextHookEx(null_mut(), code, wparam, lparam) };
                     }
-                    let outcome = runtime
-                        .with_engine(|engine| engine.handle_event(event))
+                    let event_for_log = runtime.debug_events.then(|| event.clone());
+                    let (outcome, layers) = runtime
+                        .with_engine(|engine| {
+                            let outcome = engine.handle_event(event);
+                            let layers = if runtime.debug_events {
+                                engine.active_layers().to_vec()
+                            } else {
+                                Vec::new()
+                            };
+                            (outcome, layers)
+                        })
                         .unwrap_or_default();
                     let suppress = outcome.suppress;
+                    if let Some(event) = event_for_log.as_ref() {
+                        runtime.log_key_event(event, &outcome, &layers);
+                    }
                     runtime.emit_outcome(outcome);
                     if suppress {
                         return 1;
@@ -180,16 +277,18 @@ struct Runtime {
     started_at: Instant,
     running: AtomicBool,
     paused: AtomicBool,
+    debug_events: bool,
 }
 
 impl Runtime {
-    fn new(config: Option<Config>, paused: bool) -> Self {
+    fn new(config: Option<Config>, paused: bool, debug_events: bool) -> Self {
         Self {
             engine: Mutex::new(config.map(Engine::new)),
             emitter: SendInputEmitter,
             started_at: Instant::now(),
             running: AtomicBool::new(true),
             paused: AtomicBool::new(paused),
+            debug_events,
         }
     }
 
@@ -221,10 +320,74 @@ impl Runtime {
         }
     }
 
+    fn log_key_event(&self, event: &Event, outcome: &Outcome, layers: &[String]) {
+        if !self.debug_events {
+            return;
+        }
+
+        let data = key_event_debug_data(event, outcome, layers);
+        debug!(
+            target: DEBUG_EVENTS_TARGET,
+            time_ms = data.time_ms,
+            input = %data.input,
+            kind = ?data.kind,
+            suppress = data.suppress,
+            outputs = %format_output_commands(data.outputs),
+            layers = %format_layers(data.layers),
+            "key_event"
+        );
+    }
+
+    fn log_timer_event(&self, time_ms: u64, outcome: &Outcome, layers: &[String]) {
+        if !self.debug_events || !outcome_has_debug_info(outcome) {
+            return;
+        }
+
+        debug!(
+            target: DEBUG_EVENTS_TARGET,
+            time_ms,
+            outputs = %format_output_commands(&outcome.commands),
+            diagnostics = ?outcome.diagnostics,
+            layers = %format_layers(layers),
+            "timer_event"
+        );
+    }
+
+    fn log_reset_event(
+        &self,
+        reason: &'static str,
+        time_ms: u64,
+        outcome: &Outcome,
+        layers: &[String],
+    ) {
+        if !self.debug_events || !outcome_has_debug_info(outcome) {
+            return;
+        }
+
+        debug!(
+            target: DEBUG_EVENTS_TARGET,
+            time_ms,
+            reason,
+            outputs = %format_output_commands(&outcome.commands),
+            diagnostics = ?outcome.diagnostics,
+            layers = %format_layers(layers),
+            "reset_event"
+        );
+    }
+
     fn set_paused(&self, paused: bool) {
         if paused {
             self.paused.store(true, Ordering::SeqCst);
-            if let Some(outcome) = self.with_engine(Engine::reset) {
+            if let Some((outcome, layers)) = self.with_engine(|engine| {
+                let outcome = engine.reset();
+                let layers = if self.debug_events && outcome_has_debug_info(&outcome) {
+                    engine.active_layers().to_vec()
+                } else {
+                    Vec::new()
+                };
+                (outcome, layers)
+            }) {
+                self.log_reset_event("pause", self.now_ms(), &outcome, &layers);
                 self.emit_outcome(outcome);
             }
         } else if self
@@ -238,13 +401,70 @@ impl Runtime {
     }
 
     fn replace_config(&self, config: Config) {
+        let mut reset = None;
         if let Ok(mut engine) = self.engine.lock() {
             if let Some(current) = engine.as_mut() {
-                self.emit_outcome(current.reset());
+                let outcome = current.reset();
+                let layers = if self.debug_events && outcome_has_debug_info(&outcome) {
+                    current.active_layers().to_vec()
+                } else {
+                    Vec::new()
+                };
+                reset = Some((outcome, layers));
             }
             *engine = Some(Engine::new(config));
         }
+        if let Some((outcome, layers)) = reset {
+            self.log_reset_event("replace_config", self.now_ms(), &outcome, &layers);
+            self.emit_outcome(outcome);
+        }
     }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct KeyEventDebugData<'a> {
+    time_ms: u64,
+    input: &'a KeyCode,
+    kind: EventKind,
+    suppress: bool,
+    outputs: &'a [OutputCommand],
+    layers: &'a [String],
+}
+
+fn key_event_debug_data<'a>(
+    event: &'a Event,
+    outcome: &'a Outcome,
+    layers: &'a [String],
+) -> KeyEventDebugData<'a> {
+    KeyEventDebugData {
+        time_ms: event.time_ms,
+        input: &event.key,
+        kind: event.kind,
+        suppress: outcome.suppress,
+        outputs: &outcome.commands,
+        layers,
+    }
+}
+
+fn outcome_has_debug_info(outcome: &Outcome) -> bool {
+    !outcome.commands.is_empty() || !outcome.diagnostics.is_empty()
+}
+
+fn format_output_commands(commands: &[OutputCommand]) -> String {
+    let commands = commands
+        .iter()
+        .map(|command| match command {
+            OutputCommand::KeyDown(key) => format!("KeyDown({key})"),
+            OutputCommand::KeyUp(key) => format!("KeyUp({key})"),
+            OutputCommand::Tap(key) => format!("Tap({key})"),
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("[{commands}]")
+}
+
+fn format_layers(layers: &[String]) -> String {
+    format!("[{}]", layers.join(", "))
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -548,8 +768,11 @@ fn last_error(api: &'static str) -> KeyzenWinError {
 
 #[cfg(test)]
 mod tests {
-    use super::{KeyboardInput, expand_commands, key_from_keyboard};
-    use keyzen_core::OutputCommand;
+    use super::{
+        KeyboardInput, expand_commands, format_layers, format_output_commands,
+        key_event_debug_data, key_from_keyboard, outcome_has_debug_info,
+    };
+    use keyzen_core::{Diagnostic, Event, EventKind, Outcome, OutputCommand};
     use windows_sys::Win32::UI::WindowsAndMessaging::KBDLLHOOKSTRUCT;
 
     #[test]
@@ -605,5 +828,58 @@ mod tests {
             key_from_keyboard(&right_ctrl).unwrap().as_str(),
             "RightCtrl"
         );
+    }
+
+    #[test]
+    fn key_event_debug_data_contains_input_output_time_and_state() {
+        let event = Event {
+            key: "A".parse().unwrap(),
+            kind: EventKind::KeyDown,
+            time_ms: 42,
+        };
+        let outcome = Outcome {
+            suppress: true,
+            commands: vec![OutputCommand::Tap("Left".parse().unwrap())],
+            diagnostics: Vec::new(),
+        };
+        let layers = vec!["base".to_string(), "nav".to_string()];
+
+        let data = key_event_debug_data(&event, &outcome, &layers);
+
+        assert_eq!(data.time_ms, 42);
+        assert_eq!(data.input.as_str(), "A");
+        assert_eq!(data.kind, EventKind::KeyDown);
+        assert!(data.suppress);
+        assert_eq!(data.outputs, outcome.commands);
+        assert_eq!(data.layers, layers);
+    }
+
+    #[test]
+    fn timer_debug_events_only_log_meaningful_outcomes() {
+        assert!(!outcome_has_debug_info(&Outcome::default()));
+        assert!(outcome_has_debug_info(&Outcome {
+            commands: vec![OutputCommand::Tap("A".parse().unwrap())],
+            ..Outcome::default()
+        }));
+        assert!(outcome_has_debug_info(&Outcome {
+            diagnostics: vec![Diagnostic::Warning("warning".to_string())],
+            ..Outcome::default()
+        }));
+    }
+
+    #[test]
+    fn formats_debug_outputs_and_layers_for_humans() {
+        let commands = vec![
+            OutputCommand::KeyDown("LeftCtrl".parse().unwrap()),
+            OutputCommand::Tap("Left".parse().unwrap()),
+            OutputCommand::KeyUp("LeftCtrl".parse().unwrap()),
+        ];
+        let layers = vec!["base".to_string(), "nav".to_string()];
+
+        assert_eq!(
+            format_output_commands(&commands),
+            "[KeyDown(LeftCtrl), Tap(Left), KeyUp(LeftCtrl)]"
+        );
+        assert_eq!(format_layers(&layers), "[base, nav]");
     }
 }

@@ -205,7 +205,7 @@ checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
 
 [[package]]
 name = "keyzen-cli"
-version = "1.0.0"
+version = "1.0.2"
 dependencies = [
  "anyhow",
  "clap",
@@ -219,7 +219,7 @@ dependencies = [
 
 [[package]]
 name = "keyzen-core"
-version = "1.0.0"
+version = "1.0.2"
 dependencies = [
  "serde",
  "serde_yaml",
@@ -228,13 +228,14 @@ dependencies = [
 
 [[package]]
 name = "keyzen-win"
-version = "1.0.0"
+version = "1.0.2"
 dependencies = [
  "keyzen-core",
  "serde",
  "serde_yaml",
  "thiserror",
  "tracing",
+ "tracing-subscriber",
  "windows",
  "windows-sys",
 ]

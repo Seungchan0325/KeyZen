@@ -46,6 +46,7 @@ mod platform {
     };
     use crate::RuntimeCommand;
     use crate::app_settings::{self, AppPaths, AppSettings};
+    use crate::diagnostics::TrayDiagnostics;
     use crate::single_instance::{SingleInstance, SingleInstanceError};
     use crate::startup::{StartupRegistration, TaskSchedulerStartup, update_start_at_login};
     use std::ffi::c_void;
@@ -71,8 +72,9 @@ mod platform {
         DispatchMessageW, GetCursorPos, GetMessageW, IDI_APPLICATION, LoadIconW, MF_CHECKED,
         MF_SEPARATOR, MF_STRING, MF_UNCHECKED, MSG, PostQuitMessage, RegisterClassW,
         RegisterWindowMessageW, SetForegroundWindow, TPM_RIGHTBUTTON, TrackPopupMenu,
-        TranslateMessage, WINDOW_EX_STYLE, WM_APP, WM_COMMAND, WM_CONTEXTMENU, WM_DESTROY,
-        WM_RBUTTONUP, WM_WINDOWPOSCHANGING, WNDCLASSW, WS_OVERLAPPEDWINDOW, WS_POPUP,
+        TranslateMessage, WINDOW_EX_STYLE, WM_APP, WM_CLOSE, WM_COMMAND, WM_CONTEXTMENU,
+        WM_DESTROY, WM_ENDSESSION, WM_QUERYENDSESSION, WM_RBUTTONUP, WM_WINDOWPOSCHANGING,
+        WNDCLASSW, WS_OVERLAPPEDWINDOW, WS_POPUP,
     };
     use windows::core::{Error as WindowsError, HRESULT, PCWSTR, w};
 
@@ -90,6 +92,7 @@ mod platform {
         paused: bool,
         has_config: bool,
         tray_exe: PathBuf,
+        shutdown_reason: Option<&'static str>,
     }
 
     struct ComGuard;
@@ -101,12 +104,62 @@ mod platform {
     }
 
     pub fn run_tray_app() -> Result<(), TrayError> {
+        let mut diagnostics = AppPaths::discover()
+            .ok()
+            .and_then(|paths| TrayDiagnostics::initialize(&paths).ok());
         let _instance = match SingleInstance::acquire() {
             Ok(instance) => instance,
-            Err(SingleInstanceError::AlreadyRunning) => return Ok(()),
-            Err(error) => return Err(TrayError::Operation(error.to_string())),
+            Err(SingleInstanceError::AlreadyRunning) => {
+                tracing::info!(
+                    target: "keyzen_win::lifecycle",
+                    "tray launch ignored because another KeyZen instance is running"
+                );
+                return Ok(());
+            }
+            Err(error) => {
+                tracing::error!(
+                    target: "keyzen_win::lifecycle",
+                    %error,
+                    "failed to acquire the KeyZen single-instance mutex"
+                );
+                return Err(TrayError::Operation(error.to_string()));
+            }
         };
 
+        if let Some(diagnostics) = diagnostics.as_mut()
+            && let Err(error) = diagnostics.begin_session()
+        {
+            tracing::error!(
+                target: "keyzen_win::lifecycle",
+                %error,
+                "failed to create tray session marker"
+            );
+        }
+        tracing::info!(
+            target: "keyzen_win::lifecycle",
+            pid = std::process::id(),
+            "tray process started"
+        );
+
+        let result = run_tray_session();
+        match &result {
+            Ok(()) => tracing::info!(
+                target: "keyzen_win::lifecycle",
+                "tray process exited normally"
+            ),
+            Err(error) => tracing::error!(
+                target: "keyzen_win::lifecycle",
+                %error,
+                "tray process exited with an error"
+            ),
+        }
+        if let Some(diagnostics) = diagnostics {
+            diagnostics.complete(result.is_ok());
+        }
+        result
+    }
+
+    fn run_tray_session() -> Result<(), TrayError> {
         unsafe {
             CoInitializeEx(None, COINIT_APARTMENTTHREADED)
                 .ok()
@@ -144,12 +197,30 @@ mod platform {
                 paused,
                 has_config: !paused,
                 tray_exe,
+                shutdown_reason: None,
             }))
             .map_err(|_| operation_error("tray state was already initialized"))?;
 
         let hwnd = create_hidden_window()?;
-        let _ = try_add_tray_icon(hwnd);
-        let runtime = thread::spawn(move || crate::run_controlled(config, paused, runtime_rx));
+        if try_add_tray_icon(hwnd) {
+            tracing::info!(target: "keyzen_win::lifecycle", "tray icon registered");
+        }
+        let runtime = thread::spawn(move || {
+            tracing::info!(target: "keyzen_win::lifecycle", "remapping runtime thread started");
+            let result = crate::run_controlled(config, paused, runtime_rx);
+            match &result {
+                Ok(()) => tracing::info!(
+                    target: "keyzen_win::lifecycle",
+                    "remapping runtime thread stopped"
+                ),
+                Err(error) => tracing::error!(
+                    target: "keyzen_win::lifecycle",
+                    %error,
+                    "remapping runtime thread failed"
+                ),
+            }
+            result
+        });
 
         if let Some(message) = startup_notice.or(scheduler_notice) {
             show_notification(hwnd, &message);
@@ -172,6 +243,16 @@ mod platform {
             }
         }
 
+        let shutdown_reason = STATE
+            .get()
+            .and_then(|state| state.lock().ok())
+            .and_then(|state| state.shutdown_reason)
+            .unwrap_or("message_loop_ended_without_destroy");
+        tracing::info!(
+            target: "keyzen_win::lifecycle",
+            shutdown_reason,
+            "tray message loop stopped"
+        );
         delete_tray_icon(hwnd);
         if let Some(state) = STATE.get()
             && let Ok(state) = state.lock()
@@ -237,6 +318,10 @@ mod platform {
         lparam: LPARAM,
     ) -> LRESULT {
         if TASKBAR_CREATED.get().copied() == Some(message) {
+            tracing::info!(
+                target: "keyzen_win::lifecycle",
+                "TaskbarCreated received; restoring tray icon"
+            );
             let _ = try_add_tray_icon(hwnd);
             return LRESULT(0);
         }
@@ -261,7 +346,50 @@ mod platform {
                 }
                 LRESULT(0)
             }
+            WM_QUERYENDSESSION => {
+                tracing::info!(
+                    target: "keyzen_win::lifecycle",
+                    "Windows session end requested"
+                );
+                LRESULT(1)
+            }
+            WM_ENDSESSION if wparam.0 != 0 => {
+                if let Some(state) = STATE.get()
+                    && let Ok(mut state) = state.lock()
+                {
+                    state.shutdown_reason = Some("windows_session_ending");
+                }
+                tracing::info!(
+                    target: "keyzen_win::lifecycle",
+                    "Windows session is ending"
+                );
+                let _ = unsafe { DestroyWindow(hwnd) };
+                LRESULT(0)
+            }
+            WM_CLOSE => {
+                if let Some(state) = STATE.get()
+                    && let Ok(mut state) = state.lock()
+                {
+                    state.shutdown_reason = Some("hidden_window_close_message");
+                }
+                tracing::warn!(
+                    target: "keyzen_win::lifecycle",
+                    "tray hidden window received WM_CLOSE"
+                );
+                let _ = unsafe { DestroyWindow(hwnd) };
+                LRESULT(0)
+            }
             WM_DESTROY => {
+                if let Some(state) = STATE.get()
+                    && let Ok(mut state) = state.lock()
+                    && state.shutdown_reason.is_none()
+                {
+                    state.shutdown_reason = Some("hidden_window_destroyed");
+                    tracing::warn!(
+                        target: "keyzen_win::lifecycle",
+                        "tray hidden window was destroyed without a tray Quit request"
+                    );
+                }
                 unsafe { PostQuitMessage(0) };
                 LRESULT(0)
             }
@@ -324,7 +452,22 @@ mod platform {
             TrayMenuCommand::StartAtLogin => toggle_start_at_login(hwnd),
             TrayMenuCommand::ChooseKeyConfig => choose_key_config(hwnd),
             TrayMenuCommand::Quit => unsafe {
-                let _ = DestroyWindow(hwnd);
+                if let Some(state) = STATE.get()
+                    && let Ok(mut state) = state.lock()
+                {
+                    state.shutdown_reason = Some("tray_menu_quit");
+                }
+                tracing::info!(
+                    target: "keyzen_win::lifecycle",
+                    "tray Quit command requested"
+                );
+                if let Err(error) = DestroyWindow(hwnd) {
+                    tracing::error!(
+                        target: "keyzen_win::lifecycle",
+                        %error,
+                        "failed to destroy tray hidden window"
+                    );
+                }
             },
         }
     }
@@ -464,6 +607,10 @@ mod platform {
             .map(|state| state.paused)
             .unwrap_or(true);
         let Ok(icon) = (unsafe { LoadIconW(None, IDI_APPLICATION) }) else {
+            tracing::warn!(
+                target: "keyzen_win::lifecycle",
+                "failed to load tray icon"
+            );
             return false;
         };
         let mut data = base_notify_data(hwnd);
@@ -474,11 +621,20 @@ mod platform {
 
         if !unsafe { Shell_NotifyIconW(NIM_ADD, &data) }.as_bool() {
             TRAY_ICON_CREATED.store(false, Ordering::SeqCst);
+            tracing::warn!(
+                target: "keyzen_win::lifecycle",
+                "failed to register tray icon"
+            );
             return false;
         }
         TRAY_ICON_CREATED.store(true, Ordering::SeqCst);
         data.Anonymous.uVersion = NOTIFYICON_VERSION_4;
-        let _ = unsafe { Shell_NotifyIconW(NIM_SETVERSION, &data) };
+        if !unsafe { Shell_NotifyIconW(NIM_SETVERSION, &data) }.as_bool() {
+            tracing::warn!(
+                target: "keyzen_win::lifecycle",
+                "failed to set tray icon notification version"
+            );
+        }
         true
     }
 

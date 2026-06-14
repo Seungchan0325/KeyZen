@@ -1,9 +1,13 @@
 pub mod app_settings;
+#[cfg(windows)]
+mod diagnostics;
 pub mod single_instance;
 pub mod startup;
 pub mod tray;
 
 use keyzen_core::{KeyCode, OutputCommand};
+
+pub const DEBUG_EVENTS_TARGET: &str = "keyzen_events";
 
 #[derive(Debug)]
 pub enum RuntimeCommand {
@@ -41,7 +45,9 @@ impl Emitter for NullEmitter {
 mod platform;
 
 #[cfg(windows)]
-pub use platform::{SendInputEmitter, run, run_controlled, run_until_stop};
+pub use platform::{
+    SendInputEmitter, run, run_controlled, run_until_stop, run_until_stop_with_debug_events,
+};
 
 #[cfg(not(windows))]
 pub fn run(_config: keyzen_core::Config) -> Result<(), KeyzenWinError> {
@@ -52,6 +58,15 @@ pub fn run(_config: keyzen_core::Config) -> Result<(), KeyzenWinError> {
 pub fn run_until_stop(
     _config: keyzen_core::Config,
     _stop: std::sync::mpsc::Receiver<()>,
+) -> Result<(), KeyzenWinError> {
+    Err(KeyzenWinError::UnsupportedPlatform)
+}
+
+#[cfg(not(windows))]
+pub fn run_until_stop_with_debug_events(
+    _config: keyzen_core::Config,
+    _stop: std::sync::mpsc::Receiver<()>,
+    _debug_events: bool,
 ) -> Result<(), KeyzenWinError> {
     Err(KeyzenWinError::UnsupportedPlatform)
 }

@@ -10,3 +10,7 @@
 ## 1.0.1 - 2026-06-11
 
 - Fix Tray tooltip
+
+## 1.0.2 - 2026-06-14
+
+- Add persistent tray lifecycle and failure diagnostics.
